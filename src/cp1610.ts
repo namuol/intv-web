@@ -1,13 +1,14 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
+import instructionsJson from "./instructions.json";
 
-class Bus {
+export class Bus {
   _data: number = 0x0000;
 
   /**
    * Current 16-bit data on the bus
    */
   get data(): number {
-    return this.data & 0xffff;
+    return this._data & 0xffff;
   }
   set data(_data: number) {
     this._data = _data & 0xffff;
@@ -340,7 +341,7 @@ export class CP1610 {
   }
 
   _reset() {
-    this.pc = 0x1000;
+    this.state = "RESET:IAB";
   }
 
   state:
@@ -404,6 +405,7 @@ export class CP1610 {
 
         // Here, the CPU needs to determine which state to enter next based on
         // the fetched instruction.
+        this._decodeOpcode();
         break;
       }
 
@@ -426,7 +428,9 @@ export class CP1610 {
       }
       case "IND_IMM_READ:NACT_1": {
         this.bus.nact();
-        // this.state
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
         break;
       }
 
@@ -435,4 +439,51 @@ export class CP1610 {
       }
     }
   }
+
+  _decodeOpcode() {}
+
+  step() {
+    while (this.state !== "FETCH_OPCODE:BAR") {
+      this.cycle();
+    }
+  }
 }
+
+type InstructionInfo = {
+  instruction: string;
+  cycles: number[];
+  interruptible: boolean;
+  in_s?: boolean;
+  in_z?: boolean;
+  in_o?: boolean;
+  in_c?: boolean;
+  in_d?: boolean;
+  out_s?: boolean;
+  out_z?: boolean;
+  out_o?: boolean;
+  out_c?: boolean;
+  out_i?: boolean;
+  out_d?: boolean;
+};
+type Mnemonic = string;
+type DecodedOpcode = {
+  [key: Mnemonic]: InstructionInfo;
+};
+
+const opcodeLookup: DecodedOpcode[] = [];
+for (const [rangeKey, instructions] of Object.entries(instructionsJson)) {
+  const [start, end = start] = rangeKey
+    .split("-")
+    .map((str) => parseInt(str, 16)) as [number, number | undefined];
+  for (let i = start; i <= end; ++i) {
+    opcodeLookup[i] = instructions;
+  }
+}
+
+const decodeOpcode = (opcode: number): DecodedOpcode | null => {
+  return opcodeLookup[opcode] ?? null;
+};
+
+export const forTestSuite = {
+  decodeOpcode,
+};

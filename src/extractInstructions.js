@@ -10,10 +10,13 @@ onlyTrue = (cell) => (cell.innerText ? true : undefined);
 range = (cell) =>
   cell.innerText.split("-").map((addr) => parseInt(addr.slice(1), 16));
 yesNoBool = (cell) => (cell.innerText.toLowerCase() === "yes" ? true : false);
-cycles = (cell) => cell.innerText.split("/").map((num) => parseInt(num, 10));
+cycles = (cell) =>
+  cell.innerText
+    .split("/")
+    .map((num) => parseInt(num, 10))
+    .filter((n) => n != null);
 instruction = (cell, x, row) => {
   const mnemonic = str(row[x + 1]);
-  console.log(y, x, cell.innerText, mnemonic);
 
   switch (mnemonic) {
     case "J":
@@ -106,7 +109,7 @@ for (const row of $0.rows) {
   ++y;
 }
 
-result = [];
+array = [];
 // Skip headers
 for (const row of matrix.slice(2)) {
   const item = {};
@@ -114,7 +117,18 @@ for (const row of matrix.slice(2)) {
     const columnConfig = columns[x];
     item[columnConfig.name] = columnConfig.parse(row[x], x, row);
   }
-  result.push(item);
+  array.push(item);
+}
+
+result = {};
+for (const instruction of array) {
+  const rangeKey = instruction.range.map((n) => n.toString(16)).join("-");
+  result[rangeKey] ??= {};
+  result[rangeKey][instruction.mnemonic] = {
+    ...instruction,
+    mnemonic: undefined,
+    range: undefined,
+  };
 }
 
 console.log(JSON.stringify(result));
