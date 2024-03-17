@@ -1,0 +1,686 @@
+[
+  {
+    "range": [0],
+    "instruction": "Halt",
+    "mnemonic": "HLT",
+    "cycles": [null],
+    "interruptible": false
+  },
+  {
+    "range": [1],
+    "instruction": "Set Double Byte Data",
+    "mnemonic": "SDBD",
+    "cycles": [4],
+    "interruptible": false,
+    "out_d": true
+  },
+  {
+    "range": [2],
+    "instruction": "Enable Interrupt System",
+    "mnemonic": "EIS",
+    "cycles": [4],
+    "interruptible": false,
+    "out_i": true
+  },
+  {
+    "range": [3],
+    "instruction": "Disable Interrupt System",
+    "mnemonic": "DIS",
+    "cycles": [4],
+    "interruptible": false,
+    "out_i": true
+  },
+  {
+    "range": [4],
+    "instruction": "Unconditional Jump",
+    "mnemonic": "J",
+    "cycles": [12],
+    "interruptible": true
+  },
+  {
+    "range": [4],
+    "instruction": "Jump and Enable Interrupts",
+    "mnemonic": "JE",
+    "cycles": [12],
+    "interruptible": true,
+    "out_i": true
+  },
+  {
+    "range": [4],
+    "instruction": "Jump and Disable Interrupts",
+    "mnemonic": "JD",
+    "cycles": [12],
+    "interruptible": true,
+    "out_i": true
+  },
+  {
+    "range": [4],
+    "instruction": "Jump to Subroutine",
+    "mnemonic": "JSR",
+    "cycles": [12],
+    "interruptible": true
+  },
+  {
+    "range": [4],
+    "instruction": "Jump to Subroutine and Enable Interrupts",
+    "mnemonic": "JSRE",
+    "cycles": [12],
+    "interruptible": true,
+    "out_i": true
+  },
+  {
+    "range": [4],
+    "instruction": "Jump to Subroutine and Disable Interrupts",
+    "mnemonic": "JSRD",
+    "cycles": [12],
+    "interruptible": true,
+    "out_i": true
+  },
+  {
+    "range": [5],
+    "instruction": "Terminate Current Interrupt",
+    "mnemonic": "TCI",
+    "cycles": [4],
+    "interruptible": false
+  },
+  {
+    "range": [6],
+    "instruction": "Clear Carry",
+    "mnemonic": "CLRC",
+    "cycles": [4],
+    "interruptible": false,
+    "out_c": true
+  },
+  {
+    "range": [7],
+    "instruction": "Set Carry",
+    "mnemonic": "SETC",
+    "cycles": [4],
+    "interruptible": false,
+    "out_c": true
+  },
+  {
+    "range": [8, 15],
+    "instruction": "Increment Register",
+    "mnemonic": "INCR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [16, 23],
+    "instruction": "Decrement Register",
+    "mnemonic": "DECR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [24, 31],
+    "instruction": "Complement Register",
+    "mnemonic": "COMR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [32, 39],
+    "instruction": "Negate Register",
+    "mnemonic": "NEGR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [40, 47],
+    "instruction": "Add Carry to Register",
+    "mnemonic": "ADCR",
+    "cycles": [6],
+    "interruptible": true,
+    "in_c": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [48, 51],
+    "instruction": "Get the Status Word",
+    "mnemonic": "GSWD",
+    "cycles": [6],
+    "interruptible": true,
+    "in_s": true,
+    "in_z": true,
+    "in_o": true,
+    "in_c": true
+  },
+  {
+    "range": [52, 53],
+    "instruction": "No Operation",
+    "mnemonic": "NOP",
+    "cycles": [6],
+    "interruptible": true
+  },
+  {
+    "range": [54, 55],
+    "instruction": "Software Interrupt",
+    "mnemonic": "SIN",
+    "cycles": [6],
+    "interruptible": true
+  },
+  {
+    "range": [56, 63],
+    "instruction": "Return Status Word",
+    "mnemonic": "RSWD",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [64, 71],
+    "instruction": "Swap Bytes",
+    "mnemonic": "SWAP",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [72, 79],
+    "instruction": "Shift Logical Left",
+    "mnemonic": "SLL",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [80, 87],
+    "instruction": "Rotate Left through Carry",
+    "mnemonic": "RLC",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "in_o": true,
+    "in_c": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [88, 95],
+    "instruction": "Shift Logical Left through Carry",
+    "mnemonic": "SLLC",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "in_o": true,
+    "in_c": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [96, 103],
+    "instruction": "Shift Logical Right",
+    "mnemonic": "SLR",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [104, 111],
+    "instruction": "Shift Arithmetic Right",
+    "mnemonic": "SAR",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [112, 119],
+    "instruction": "Rotate Right through Carry",
+    "mnemonic": "RRC",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "in_o": true,
+    "in_c": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [120, 127],
+    "instruction": "Shift Arithmetic Right through Carry",
+    "mnemonic": "SARC",
+    "cycles": [6, 8],
+    "interruptible": false,
+    "in_o": true,
+    "in_c": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [128, 191],
+    "instruction": "Move Register",
+    "mnemonic": "MOVR",
+    "cycles": [6, 7],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [192, 255],
+    "instruction": "Add Registers",
+    "mnemonic": "ADDR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [256, 319],
+    "instruction": "Subtract Registers",
+    "mnemonic": "SUBR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [320, 383],
+    "instruction": "Compare Registers",
+    "mnemonic": "CMPR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [384, 447],
+    "instruction": "And Registers",
+    "mnemonic": "ANDR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [448, 511],
+    "instruction": "Xor Registers",
+    "mnemonic": "XORR",
+    "cycles": [6],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Unconditional Branch",
+    "mnemonic": "B",
+    "cycles": [9],
+    "interruptible": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Carry",
+    "mnemonic": "BC",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_c": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Overflow",
+    "mnemonic": "BOV",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Plus",
+    "mnemonic": "BPL",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch If Equal / Branch On Zero",
+    "mnemonic": "BEQ",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_z": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch if Less Than / Branch if Not Greater or Equal",
+    "mnemonic": "BLT",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch if Less Than or Equal / Branch if Not Greater Than",
+    "mnemonic": "BLE",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_z": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Unequal Sign and Carry",
+    "mnemonic": "BUSC",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_c": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "No Operation",
+    "mnemonic": "NOPP",
+    "cycles": [7],
+    "interruptible": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on No Carry",
+    "mnemonic": "BNC",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_c": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on No Overflow",
+    "mnemonic": "BNOV",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Minus",
+    "mnemonic": "BMI",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch If Not Equal / Branch If Not Zero",
+    "mnemonic": "BNEQ",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_z": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch if Greater Than or Equal / Branch if Not Less Than",
+    "mnemonic": "BGE",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch if Greater Than / Branch if Not Less Than or Equal",
+    "mnemonic": "BGT",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_z": true,
+    "in_o": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on Equal Sign and Carry",
+    "mnemonic": "BESC",
+    "cycles": [7, 9],
+    "interruptible": true,
+    "in_s": true,
+    "in_c": true
+  },
+  {
+    "range": [512, 575],
+    "instruction": "Branch on External",
+    "mnemonic": "BEXT",
+    "cycles": [7, 9],
+    "interruptible": true
+  },
+  {
+    "range": [576, 583],
+    "instruction": "Move Out",
+    "mnemonic": "MVO",
+    "cycles": [11],
+    "interruptible": false
+  },
+  {
+    "range": [584, 623],
+    "instruction": "Move Out Indirect",
+    "mnemonic": "MVO@",
+    "cycles": [9],
+    "interruptible": false,
+    "in_d": true
+  },
+  {
+    "range": [624, 639],
+    "instruction": "Move Out Immediate",
+    "mnemonic": "MVOI",
+    "cycles": [9],
+    "interruptible": false,
+    "in_d": true
+  },
+  {
+    "range": [640, 647],
+    "instruction": "Move In",
+    "mnemonic": "MVI",
+    "cycles": [10],
+    "interruptible": true
+  },
+  {
+    "range": [648, 687],
+    "instruction": "Move In Indirect",
+    "mnemonic": "MVI@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true
+  },
+  {
+    "range": [688, 703],
+    "instruction": "Move In Immediate",
+    "mnemonic": "MVII",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true
+  },
+  {
+    "range": [704, 711],
+    "instruction": "Add",
+    "mnemonic": "ADD",
+    "cycles": [10],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [712, 751],
+    "instruction": "Add Indirect",
+    "mnemonic": "ADD@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [752, 767],
+    "instruction": "Add Immediate",
+    "mnemonic": "ADDI",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [768, 775],
+    "instruction": "Subtract",
+    "mnemonic": "SUB",
+    "cycles": [10],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [776, 815],
+    "instruction": "Subtract Indirect",
+    "mnemonic": "SUB@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [816, 831],
+    "instruction": "Subtract Immediate",
+    "mnemonic": "SUBI",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [832, 839],
+    "instruction": "Compare",
+    "mnemonic": "CMP",
+    "cycles": [10],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [840, 879],
+    "instruction": "Compare Indirect",
+    "mnemonic": "CMP@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [880, 895],
+    "instruction": "Compare Immediate",
+    "mnemonic": "CMPI",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true,
+    "out_o": true,
+    "out_c": true
+  },
+  {
+    "range": [896, 903],
+    "instruction": "And",
+    "mnemonic": "AND",
+    "cycles": [10],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [904, 943],
+    "instruction": "And Indirect",
+    "mnemonic": "AND@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [944, 959],
+    "instruction": "And Immediate",
+    "mnemonic": "ANDI",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [960, 967],
+    "instruction": "Xor",
+    "mnemonic": "XOR",
+    "cycles": [10],
+    "interruptible": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [968, 1007],
+    "instruction": "Xor Indirect",
+    "mnemonic": "XOR@",
+    "cycles": [8, 10, 11],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true
+  },
+  {
+    "range": [1008, 1023],
+    "instruction": "Xor Immediate",
+    "mnemonic": "XORI",
+    "cycles": [8, 10],
+    "interruptible": true,
+    "in_d": true,
+    "out_s": true,
+    "out_z": true
+  }
+]
