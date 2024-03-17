@@ -14,7 +14,7 @@ cycles = (cell) =>
   cell.innerText
     .split("/")
     .map((num) => parseInt(num, 10))
-    .filter((n) => n != null);
+    .filter((n) => !Number.isNaN(n));
 instruction = (cell, x, row) => {
   const mnemonic = str(row[x + 1]);
 
@@ -122,7 +122,9 @@ for (const row of matrix.slice(2)) {
 
 result = {};
 for (const instruction of array) {
-  const rangeKey = instruction.range.map((n) => n.toString(16)).join("-");
+  const rangeKey = instruction.range
+    .map((n) => n.toString(16).padStart(4, "0"))
+    .join("-");
   result[rangeKey] ??= {};
   result[rangeKey][instruction.mnemonic] = {
     ...instruction,
@@ -131,4 +133,4 @@ for (const instruction of array) {
   };
 }
 
-console.log(JSON.stringify(result));
+console.log(`export default ${JSON.stringify(result)} as const;`);

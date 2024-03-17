@@ -1,5 +1,5 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
-import instructionsJson from "./instructions.json";
+import instructions from "./instructions";
 
 export class Bus {
   _data: number = 0x0000;
@@ -180,13 +180,13 @@ export class CP1610 {
   //
   // REGISTERS
   //
-  _registers: Uint16Array = new Uint16Array(8);
+  _registers = new Uint16Array(8);
 
   /**
    * General Purpose.
    */
   get r0() {
-    return this._registers[0];
+    return this._registers[0] ?? -1;
   }
   set r0(val: number) {
     this._registers[0] = val;
@@ -196,7 +196,7 @@ export class CP1610 {
    * General Purpose.
    */
   get r1() {
-    return this._registers[1];
+    return this._registers[1] ?? -1;
   }
   set r1(val: number) {
     this._registers[1] = val;
@@ -206,7 +206,7 @@ export class CP1610 {
    * General Purpose.
    */
   get r2() {
-    return this._registers[2];
+    return this._registers[2] ?? -1;
   }
   set r2(val: number) {
     this._registers[2] = val;
@@ -216,7 +216,7 @@ export class CP1610 {
    * General Purpose.
    */
   get r3() {
-    return this._registers[3];
+    return this._registers[3] ?? -1;
   }
   set r3(val: number) {
     this._registers[3] = val;
@@ -226,7 +226,7 @@ export class CP1610 {
    * General Purpose. Auto-increments on indirect reads and writes.
    */
   get r4() {
-    return this._registers[4];
+    return this._registers[4] ?? -1;
   }
   set r4(val: number) {
     this._registers[4] = val;
@@ -236,7 +236,7 @@ export class CP1610 {
    * General Purpose. Auto-increments on indirect reads and writes.
    */
   get r5() {
-    return this._registers[5];
+    return this._registers[5] ?? -1;
   }
   set r5(val: number) {
     this._registers[5] = val;
@@ -247,7 +247,7 @@ export class CP1610 {
    * indirect writes.
    */
   get r6() {
-    return this._registers[6];
+    return this._registers[6] ?? -1;
   }
   set r6(val: number) {
     this._registers[6] = val;
@@ -257,7 +257,7 @@ export class CP1610 {
    * Program Counter. Auto-increments on indirect reads and writes.
    */
   get r7() {
-    return this._registers[7];
+    return this._registers[7] ?? -1;
   }
   set r7(val: number) {
     this._registers[7] = val;
@@ -449,9 +449,9 @@ export class CP1610 {
   }
 }
 
-type InstructionInfo = {
+type InstructionInfo = Readonly<{
   instruction: string;
-  cycles: number[];
+  cycles: ReadonlyArray<number>;
   interruptible: boolean;
   in_s?: boolean;
   in_z?: boolean;
@@ -464,19 +464,19 @@ type InstructionInfo = {
   out_c?: boolean;
   out_i?: boolean;
   out_d?: boolean;
-};
+}>;
 type Mnemonic = string;
 type DecodedOpcode = {
   [key: Mnemonic]: InstructionInfo;
 };
 
 const opcodeLookup: DecodedOpcode[] = [];
-for (const [rangeKey, instructions] of Object.entries(instructionsJson)) {
+for (const [rangeKey, matchingInstructions] of Object.entries(instructions)) {
   const [start, end = start] = rangeKey
     .split("-")
     .map((str) => parseInt(str, 16)) as [number, number | undefined];
   for (let i = start; i <= end; ++i) {
-    opcodeLookup[i] = instructions;
+    opcodeLookup[i] = matchingInstructions;
   }
 }
 
