@@ -7,55 +7,35 @@ describe("CP1610", () => {
     const bus = new Bus();
     const cpu = new CP1610(bus);
 
-    expect(cpu.pc).toBe(0);
+    expect(cpu.r[7]).toBe(0);
     expect(cpu.state).toBe("RESET:IAB");
 
     // Fake the exec ROM asserting the reset vector address on the bus:
     bus.data = 0x1000;
 
     cpu.step();
-    expect(cpu.pc).toBe(0x1000);
+    expect(cpu.r[7]).toBe(0x1000);
     expect(cpu.state).toBe("FETCH_OPCODE:BAR");
   });
 });
 
 describe("decodeOpcode", () => {
   const tests = [
-    {addrs: [0x0000], mnemonics: ["HLT"]},
-    {addrs: [0x0001], mnemonics: ["SDBD"]},
-    {addrs: [0x0004], mnemonics: ["J", "JE", "JD", "JSR", "JSRE", "JSRD"]},
+    {addrs: [0x0000], mnemonic: "HLT"},
+    {addrs: [0x0001], mnemonic: "SDBD"},
+    {addrs: [0x0004], mnemonic: "J"},
     {
       addrs: [0x0200, 0x222, 0x23f],
-      mnemonics: [
-        "B",
-        "BC",
-        "BOV",
-        "BPL",
-        "BEQ",
-        "BLT",
-        "BLE",
-        "BUSC",
-        "NOPP",
-        "BNC",
-        "BNOV",
-        "BMI",
-        "BNEQ",
-        "BGE",
-        "BGT",
-        "BESC",
-        "BEXT",
-      ],
+      mnemonic: "B",
     },
-  ];
-  for (const {addrs, mnemonics} of tests) {
-    test(mnemonics.join("/"), () => {
+  ] as const;
+  for (const {addrs, mnemonic} of tests) {
+    test(mnemonic, () => {
       for (const addr of addrs) {
-        const decoded = decodeOpcode(addr);
-        expect(decoded).toBeDefined();
-        expect(Object.keys(decoded!).length).toBe(mnemonics.length);
-        for (const mnemonic of mnemonics) {
-          expect(decoded![mnemonic]).toBeDefined();
-        }
+        const instructionConfig = decodeOpcode(addr);
+        expect(instructionConfig).toBeDefined();
+        expect(instructionConfig).toBeDefined();
+        expect(instructionConfig?.mnemonic).toBe(mnemonic);
       }
     });
   }

@@ -1,6 +1,217 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import instructions from "./instructions";
 
+export type InstructionConfig = Readonly<{
+  instruction: string;
+  mnemonic: Mnemonic;
+  cycles: ReadonlyArray<number>;
+  interruptible: boolean;
+  in_s?: boolean;
+  in_z?: boolean;
+  in_o?: boolean;
+  in_c?: boolean;
+  in_d?: boolean;
+  out_s?: boolean;
+  out_z?: boolean;
+  out_o?: boolean;
+  out_c?: boolean;
+  out_i?: boolean;
+  out_d?: boolean;
+}>;
+
+export type Mnemonic =
+  | "HLT"
+  | "SDBD"
+  | "EIS"
+  | "DIS"
+  | "J"
+  | "TCI"
+  | "CLRC"
+  | "SETC"
+  | "INCR"
+  | "DECR"
+  | "COMR"
+  | "NEGR"
+  | "ADCR"
+  | "GSWD"
+  | "NOP"
+  | "SIN"
+  | "RSWD"
+  | "SWAP"
+  | "SLL"
+  | "RLC"
+  | "SLLC"
+  | "SLR"
+  | "SAR"
+  | "RRC"
+  | "SARC"
+  | "MOVR"
+  | "ADDR"
+  | "SUBR"
+  | "CMPR"
+  | "ANDR"
+  | "XORR"
+  | "B"
+  | "MVO"
+  | "MVO@"
+  | "MVOI"
+  | "MVI"
+  | "MVI@"
+  | "MVII"
+  | "ADD"
+  | "ADD@"
+  | "ADDI"
+  | "SUB"
+  | "SUB@"
+  | "SUBI"
+  | "CMP"
+  | "CMP@"
+  | "CMPI"
+  | "AND"
+  | "AND@"
+  | "ANDI"
+  | "XOR"
+  | "XOR@"
+  | "XORI";
+
+/**
+ * Internal state of the CPU. This is essentially half of a state machine; the
+ * rest of the state machine implementation lives in the `cycle` method of the
+ * CPU.
+ *
+ * The state is primarily used to control interactions with the bus.
+ *
+ * For comprehensive documentation on this key part of the CPU, I highly
+ * recommend reading Spatula City's
+ * [guide](http://spatula-city.org/~im14u2c/intv/tech/master.html).
+ *
+ * A (simplified and somewhat incomplete) graphical representation of the state
+ * machine can be viewed
+ * [here](http://spatula-city.org/~im14u2c/intv/tech/state_flow_diag.html).
+ */
+type CpuState =
+  | "RESET:IAB"
+  | "RESET:NACT"
+  //
+  | "FETCH_OPCODE:BAR"
+  | "FETCH_OPCODE:NACT_0"
+  | "FETCH_OPCODE:DTB"
+  | "FETCH_OPCODE:NACT_1"
+  // AKA immediate mode when 000 is specified for the register to read an
+  // address from:
+  | "INDIRECT_READ:BAR"
+  | "INDIRECT_READ:NACT_0"
+  | "INDIRECT_READ:DTB"
+  | "INDIRECT_READ:NACT_1"
+  //
+  | "INDIRECT_WRITE:BAR"
+  | "INDIRECT_WRITE:NACT_0"
+  | "INDIRECT_WRITE:DW"
+  | "INDIRECT_WRITE:DWS"
+  | "INDIRECT_WRITE:NACT_1"
+  //
+  | "DIRECT_READ:BAR"
+  | "DIRECT_READ:NACT_0"
+  | "DIRECT_READ:ADAR"
+  | "DIRECT_READ:NACT_1"
+  | "DIRECT_READ:DTB"
+  | "DIRECT_READ:NACT_2"
+  // Same as above, but read two args (only used for Jump instructions)
+  //
+  // I'm not sure this is the exact sequence, but I'm going to assume it is for
+  // now since it does match the cycle count for all Jump instructions (12)
+  | "DIRECT_READ_TWICE:BAR_0"
+  | "DIRECT_READ_TWICE:NACT_0"
+  | "DIRECT_READ_TWICE:ADAR_0"
+  | "DIRECT_READ_TWICE:NACT_1"
+  | "DIRECT_READ_TWICE:DTB_0"
+  | "DIRECT_READ_TWICE:NACT_2"
+  | "DIRECT_READ_TWICE:BAR_1"
+  | "DIRECT_READ_TWICE:NACT_1"
+  | "DIRECT_READ_TWICE:ADAR_1"
+  | "DIRECT_READ_TWICE:NACT_1"
+  | "DIRECT_READ_TWICE:DTB_1"
+  | "DIRECT_READ_TWICE:NACT_2"
+  //
+  | "DIRECT_WRITE:BAR"
+  | "DIRECT_WRITE:NACT_0"
+  | "DIRECT_WRITE:ADAR"
+  | "DIRECT_WRITE:NACT_1"
+  | "DIRECT_WRITE:DW"
+  | "DIRECT_WRITE:DWS"
+  | "DIRECT_WRITE:NACT_2"
+  //
+  | "INDIRECT_SDBD_READ:BAR"
+  | "INDIRECT_SDBD_READ:NACT_0"
+  | "INDIRECT_SDBD_READ:DTB"
+  | "INDIRECT_SDBD_READ:BAR"
+  | "INDIRECT_SDBD_READ:NACT_1"
+  | "INDIRECT_SDBD_READ:DTB"
+  //
+  | "INTERRUPT:INTAK"
+  | "INTERRUPT:NACT_0"
+  | "INTERRUPT:DW"
+  | "INTERRUPT:DWS"
+  | "INTERRUPT:NACT_1"
+  | "INTERRUPT:IAB"
+  | "INTERRUPT:NACT_2";
+
+const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
+  HLT: "INDIRECT_READ:BAR",
+  SDBD: "INDIRECT_READ:BAR",
+  EIS: "INDIRECT_READ:BAR",
+  DIS: "INDIRECT_READ:BAR",
+  J: "DIRECT_READ_TWICE:BAR_0",
+  TCI: "INDIRECT_READ:BAR",
+  CLRC: "INDIRECT_READ:BAR",
+  SETC: "INDIRECT_READ:BAR",
+  INCR: "INDIRECT_READ:BAR",
+  DECR: "INDIRECT_READ:BAR",
+  COMR: "INDIRECT_READ:BAR",
+  NEGR: "INDIRECT_READ:BAR",
+  ADCR: "INDIRECT_READ:BAR",
+  GSWD: "INDIRECT_READ:BAR",
+  NOP: "INDIRECT_READ:BAR",
+  SIN: "INDIRECT_READ:BAR",
+  RSWD: "INDIRECT_READ:BAR",
+  SWAP: "INDIRECT_READ:BAR",
+  SLL: "INDIRECT_READ:BAR",
+  RLC: "INDIRECT_READ:BAR",
+  SLLC: "INDIRECT_READ:BAR",
+  SLR: "INDIRECT_READ:BAR",
+  SAR: "INDIRECT_READ:BAR",
+  RRC: "INDIRECT_READ:BAR",
+  SARC: "INDIRECT_READ:BAR",
+  MOVR: "INDIRECT_READ:BAR",
+  ADDR: "INDIRECT_READ:BAR",
+  SUBR: "INDIRECT_READ:BAR",
+  CMPR: "INDIRECT_READ:BAR",
+  ANDR: "INDIRECT_READ:BAR",
+  XORR: "INDIRECT_READ:BAR",
+  B: "INDIRECT_READ:BAR",
+  MVO: "INDIRECT_READ:BAR",
+  "MVO@": "INDIRECT_READ:BAR",
+  MVOI: "INDIRECT_READ:BAR",
+  MVI: "INDIRECT_READ:BAR",
+  "MVI@": "INDIRECT_READ:BAR",
+  MVII: "INDIRECT_READ:BAR",
+  ADD: "INDIRECT_READ:BAR",
+  "ADD@": "INDIRECT_READ:BAR",
+  ADDI: "INDIRECT_READ:BAR",
+  SUB: "INDIRECT_READ:BAR",
+  "SUB@": "INDIRECT_READ:BAR",
+  SUBI: "INDIRECT_READ:BAR",
+  CMP: "INDIRECT_READ:BAR",
+  "CMP@": "INDIRECT_READ:BAR",
+  CMPI: "INDIRECT_READ:BAR",
+  AND: "INDIRECT_READ:BAR",
+  "AND@": "INDIRECT_READ:BAR",
+  ANDI: "INDIRECT_READ:BAR",
+  XOR: "INDIRECT_READ:BAR",
+  "XOR@": "INDIRECT_READ:BAR",
+  XORI: "INDIRECT_READ:BAR",
+};
+
 export class Bus {
   _data: number = 0x0000;
 
@@ -180,102 +391,10 @@ export class CP1610 {
   //
   // REGISTERS
   //
-  _registers = new Uint16Array(8);
 
-  /**
-   * General Purpose.
-   */
-  get r0() {
-    return this._registers[0] ?? -1;
-  }
-  set r0(val: number) {
-    this._registers[0] = val;
-  }
-
-  /**
-   * General Purpose.
-   */
-  get r1() {
-    return this._registers[1] ?? -1;
-  }
-  set r1(val: number) {
-    this._registers[1] = val;
-  }
-
-  /**
-   * General Purpose.
-   */
-  get r2() {
-    return this._registers[2] ?? -1;
-  }
-  set r2(val: number) {
-    this._registers[2] = val;
-  }
-
-  /**
-   * General Purpose.
-   */
-  get r3() {
-    return this._registers[3] ?? -1;
-  }
-  set r3(val: number) {
-    this._registers[3] = val;
-  }
-
-  /**
-   * General Purpose. Auto-increments on indirect reads and writes.
-   */
-  get r4() {
-    return this._registers[4] ?? -1;
-  }
-  set r4(val: number) {
-    this._registers[4] = val;
-  }
-
-  /**
-   * General Purpose. Auto-increments on indirect reads and writes.
-   */
-  get r5() {
-    return this._registers[5] ?? -1;
-  }
-  set r5(val: number) {
-    this._registers[5] = val;
-  }
-
-  /**
-   * Stack Pointer. Auto-increments on indirect reads. Auto-decrements on
-   * indirect writes.
-   */
-  get r6() {
-    return this._registers[6] ?? -1;
-  }
-  set r6(val: number) {
-    this._registers[6] = val;
-  }
-
-  /**
-   * Program Counter. Auto-increments on indirect reads and writes.
-   */
-  get r7() {
-    return this._registers[7] ?? -1;
-  }
-  set r7(val: number) {
-    this._registers[7] = val;
-  }
-
-  get sp() {
-    return this.r6;
-  }
-  set sp(addr: number) {
-    this.r6 = addr;
-  }
-
-  get pc() {
-    return this.r7;
-  }
-  set pc(addr: number) {
-    this.r7 = addr;
-  }
+  // Hackish: Using tuple syntax here to keep typechecking tidy:
+  r: [number, number, number, number, number, number, number, number] =
+    new Uint16Array(8) as any;
 
   //
   // FLAGS
@@ -334,6 +453,10 @@ export class CP1610 {
    * Current opcode we're executing.
    */
   opcode: number = 0x0000;
+  /**
+   * Arguments that have been read for current opcode (if applicable)
+   */
+  args: [number, number] = [0x0000, 0x0000];
 
   constructor(bus: Bus) {
     this.bus = bus;
@@ -344,19 +467,7 @@ export class CP1610 {
     this.state = "RESET:IAB";
   }
 
-  state:
-    | "RESET:IAB"
-    | "RESET:NACT"
-    //
-    | "FETCH_OPCODE:BAR"
-    | "FETCH_OPCODE:NACT_0"
-    | "FETCH_OPCODE:DTB"
-    | "FETCH_OPCODE:NACT_1"
-    //
-    | "IND_IMM_READ:BAR"
-    | "IND_IMM_READ:NACT_0"
-    | "IND_IMM_READ:DTB"
-    | "IND_IMM_READ:NACT_1" = "RESET:IAB";
+  state: CpuState = "RESET:IAB";
 
   cycle() {
     switch (this.state) {
@@ -366,7 +477,7 @@ export class CP1610 {
         // this phase, an external device should assert the address of the RESET
         // vector as appropriate. The CPU then moves this address into the
         // program counter and resumes execution.
-        this.pc = this.bus.data;
+        this.r[7] = this.bus.data;
         this.state = "RESET:NACT";
         break;
       }
@@ -381,7 +492,7 @@ export class CP1610 {
         this.bus.bar();
         // CPU asserts address of the Instruction or Data to read. Devices
         // should latch the address at this time and perform address decoding.
-        this.bus.data = this.pc;
+        this.bus.data = this.r[7];
         this.state = "FETCH_OPCODE:NACT_0";
         break;
       }
@@ -395,8 +506,8 @@ export class CP1610 {
         this.bus.dtb();
         // The addressed device asserts its data on the bus. The CPU then reads
         // this data.
-        this.state = "FETCH_OPCODE:NACT_1";
         this.opcode = this.bus.data;
+        this.state = "FETCH_OPCODE:NACT_1";
         break;
       }
       case "FETCH_OPCODE:NACT_1": {
@@ -409,26 +520,366 @@ export class CP1610 {
         break;
       }
 
-      case "IND_IMM_READ:BAR": {
+      case "INDIRECT_READ:BAR": {
         this.bus.bar();
         // CPU asserts address of the Instruction or Data to read. Devices
         // should latch the address at this time and perform address decoding.
-        this.state = "IND_IMM_READ:NACT_0";
+        this.state = "INDIRECT_READ:NACT_0";
         break;
       }
-      case "IND_IMM_READ:NACT_0": {
+      case "INDIRECT_READ:NACT_0": {
         this.bus.nact();
-        this.state = "IND_IMM_READ:DTB";
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "INDIRECT_READ:DTB";
         break;
       }
-      case "IND_IMM_READ:DTB": {
+      case "INDIRECT_READ:DTB": {
         this.bus.dtb();
-        this.state = "IND_IMM_READ:NACT_1";
+        // The addressed device asserts its data on the bus. The CPU then reads
+        // this data.
+        this.state = "INDIRECT_READ:NACT_1";
         break;
       }
-      case "IND_IMM_READ:NACT_1": {
+      case "INDIRECT_READ:NACT_1": {
         this.bus.nact();
 
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "INDIRECT_WRITE:BAR": {
+        this.bus.bar();
+        this.state = "INDIRECT_WRITE:NACT_0";
+        break;
+      }
+      case "INDIRECT_WRITE:NACT_0": {
+        this.bus.nact();
+        this.state = "INDIRECT_WRITE:DW";
+        break;
+      }
+      case "INDIRECT_WRITE:DW": {
+        this.bus.dw();
+        this.state = "INDIRECT_WRITE:DWS";
+        break;
+      }
+      case "INDIRECT_WRITE:DWS": {
+        this.bus.dws();
+        this.state = "INDIRECT_WRITE:NACT_1";
+        break;
+      }
+      case "INDIRECT_WRITE:NACT_1": {
+        this.bus.nact();
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "DIRECT_READ:BAR": {
+        this.bus.bar();
+        // CPU asserts address of the Instruction or Data to read. Devices
+        // should latch the address at this time and perform address decoding.
+        this.state = "DIRECT_READ:NACT_0";
+        break;
+      }
+      case "DIRECT_READ:NACT_0": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ:ADAR";
+        break;
+      }
+      case "DIRECT_READ:ADAR": {
+        this.bus.adar();
+        // The addressed device asserts the data that is at the location
+        // addressed during BAR. This data is then latched as an address by all
+        // devices for a subsequent DTB bus phase. The CPU remains off the bus
+        // during this cycle.
+        this.state = "DIRECT_READ:NACT_1";
+        break;
+      }
+      case "DIRECT_READ:NACT_1": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ:DTB";
+        break;
+      }
+      case "DIRECT_READ:DTB": {
+        this.bus.dtb();
+        // The newly-addressed device (the one whose address was given during
+        // ADAR) asserts its data on the bus. The CPU then reads this data.
+        this.state = "DIRECT_READ:NACT_2";
+        break;
+      }
+      case "DIRECT_READ:NACT_2": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "DIRECT_READ_TWICE:BAR_0": {
+        this.bus.bar();
+        // CPU asserts address of the Instruction or Data to read. Devices
+        // should latch the address at this time and perform address decoding.
+        this.state = "DIRECT_READ_TWICE:NACT_0";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_0": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ_TWICE:ADAR_0";
+        break;
+      }
+      case "DIRECT_READ_TWICE:ADAR_0": {
+        this.bus.adar();
+        // The addressed device asserts the data that is at the location
+        // addressed during BAR. This data is then latched as an address by all
+        // devices for a subsequent DTB bus phase. The CPU remains off the bus
+        // during this cycle.
+        this.state = "DIRECT_READ_TWICE:NACT_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_1": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ_TWICE:DTB_0";
+        break;
+      }
+      case "DIRECT_READ_TWICE:DTB_0": {
+        this.bus.dtb();
+        // The newly-addressed device (the one whose address was given during
+        // ADAR) asserts its data on the bus. The CPU then reads this data.
+        this.state = "DIRECT_READ_TWICE:NACT_2";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_2": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ_TWICE:BAR_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:BAR_1": {
+        this.bus.bar();
+        // CPU asserts address of the Instruction or Data to read. Devices
+        // should latch the address at this time and perform address decoding.
+        this.state = "DIRECT_READ_TWICE:NACT_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_1": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ_TWICE:ADAR_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:ADAR_1": {
+        this.bus.adar();
+        // The addressed device asserts the data that is at the location
+        // addressed during BAR. This data is then latched as an address by all
+        // devices for a subsequent DTB bus phase. The CPU remains off the bus
+        // during this cycle.
+        this.state = "DIRECT_READ_TWICE:NACT_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_1": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_READ_TWICE:DTB_1";
+        break;
+      }
+      case "DIRECT_READ_TWICE:DTB_1": {
+        this.bus.dtb();
+        // The newly-addressed device (the one whose address was given during
+        // ADAR) asserts its data on the bus. The CPU then reads this data.
+        this.state = "DIRECT_READ_TWICE:NACT_2";
+        break;
+      }
+      case "DIRECT_READ_TWICE:NACT_2": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "DIRECT_WRITE:BAR": {
+        this.bus.bar();
+        // CPU asserts address of the Data to write. Devices should latch the
+        // address at this time and perform address decoding.
+        this.state = "DIRECT_WRITE:NACT_0";
+        break;
+      }
+      case "DIRECT_WRITE:NACT_0": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_WRITE:ADAR";
+        break;
+      }
+      case "DIRECT_WRITE:ADAR": {
+        this.bus.adar();
+        // The addressed device asserts the data that is at the location
+        // addressed during BAR. This data is then latched as an address by all
+        // devices for subsequent DW and DWS bus phase. The CPU remains off the
+        // bus during this cycle.
+        this.state = "DIRECT_WRITE:NACT_1";
+        break;
+      }
+      case "DIRECT_WRITE:NACT_1": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "DIRECT_WRITE:DW";
+        break;
+      }
+      case "DIRECT_WRITE:DW": {
+        this.bus.dw();
+        // The CPU asserts the data to be written. The newly-addressed device
+        // (the one whose address was given during ADAR) can latch the data at
+        // this time, although it is not necessary yet, as the data is stable
+        // through the next phase.
+        this.state = "DIRECT_WRITE:DWS";
+        break;
+      }
+      case "DIRECT_WRITE:DWS": {
+        this.bus.dws();
+        // The CPU continues to assert the data to be written. The addressed
+        // device can latch the data at this time if it hasn't already.
+        this.state = "DIRECT_WRITE:NACT_2";
+        break;
+      }
+      case "DIRECT_WRITE:NACT_2": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "INDIRECT_SDBD_READ:BAR": {
+        this.bus.bar();
+        // CPU asserts address of the Instruction or Data to read. Devices
+        // should latch the address at this time and perform address decoding.
+        this.state = "INDIRECT_SDBD_READ:NACT_0";
+        break;
+      }
+      case "INDIRECT_SDBD_READ:NACT_0": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "INDIRECT_SDBD_READ:DTB";
+        break;
+      }
+      case "INDIRECT_SDBD_READ:DTB": {
+        this.bus.dtb();
+        // The addressed device asserts the data that is at the location
+        // addressed during BAR. This data is then latched as an address by all
+        // devices for a subsequent DTB bus phase. The CPU remains off the bus
+        // during this cycle.
+        this.state = "INDIRECT_SDBD_READ:BAR";
+        break;
+      }
+      case "INDIRECT_SDBD_READ:BAR": {
+        this.bus.bar();
+        // The device deasserts the bus during the first quarter of this cycle,
+        // and the CPU asserts a new address for the upper byte of Data during
+        // the latter half of this cycle. Notice that there is no NACT spacing
+        // cycle before this BAR!
+        this.state = "INDIRECT_SDBD_READ:NACT_1";
+        break;
+      }
+      case "INDIRECT_SDBD_READ:NACT_1": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "INDIRECT_SDBD_READ:DTB";
+        break;
+      }
+      case "INDIRECT_SDBD_READ:DTB": {
+        this.bus.dtb();
+        // The addressed device asserts its data on the bus. The CPU then reads
+        // this data. As with cycle 3, there is no NACT spacing cycle after this
+        // cycle!
+
+        // TODO: Now what?
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "INTERRUPT:INTAK": {
+        this.bus.intak();
+        // The CPU asserts the current Stack Pointer address (the value in R6),
+        // and increments the stack pointer internally. Devices are expected to
+        // latch this address and decode it internally. Also, devices are
+        // expected to take any special interrupt-acknowledgement steps at this
+        // time. (On the Intellivision, this bus phase is remapped to BAR for
+        // most devices. The only device that sees INTAK is the 16-bit System
+        // RAM.)
+        this.state = "INTERRUPT:NACT_0";
+        break;
+      }
+      case "INTERRUPT:NACT_0": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "INTERRUPT:DW";
+        break;
+      }
+      case "INTERRUPT:DW": {
+        this.bus.dw();
+        // The CPU outputs the current program counter address. The device
+        // addressed during INTAK should latch the data either now or during the
+        // next cycle (DWS).
+        this.state = "INTERRUPT:DWS";
+        break;
+      }
+      case "INTERRUPT:DWS": {
+        this.bus.dws();
+        // The CPU continues to assert the current program counter address. If
+        // the addressed device hasn't done so already, it should latch the data
+        // now.
+        this.state = "INTERRUPT:NACT_1";
+        break;
+      }
+      case "INTERRUPT:NACT_1": {
+        this.bus.nact();
+        // The CPU deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        this.state = "INTERRUPT:IAB";
+        break;
+      }
+      case "INTERRUPT:IAB": {
+        this.bus.iab();
+        // An external device asserts the new program counter address (the
+        // address of the interrupt service routine) on the bus. The CPU latches
+        // this address and transfers it to the program counter. On the
+        // Intellivision, one of the EXEC ROMs handles the program counter
+        // address assertion.
+        this.state = "INTERRUPT:NACT_2";
+        break;
+      }
+      case "INTERRUPT:NACT_2": {
+        this.bus.nact();
+        // The device deasserts the bus, and no other bus activity occurs during
+        // this cycle.
+        
         // TODO: Now what?
         this.state = "FETCH_OPCODE:BAR";
         break;
@@ -440,7 +891,25 @@ export class CP1610 {
     }
   }
 
-  _decodeOpcode() {}
+  _decodeOpcode() {
+    const instruction = decodeOpcode(this.opcode);
+    if (!instruction) {
+      console.error(
+        `Uknown instruction opcode: $${this.opcode
+          .toString(16)
+          .padStart(4, "0")}`,
+      );
+      this.state = "FETCH_OPCODE:BAR";
+      return;
+    }
+    this.state = INSTRUCTION_STATES[instruction.mnemonic];
+
+    // If the double-byte flag is set, and we're making an indirect read next,
+    // we want to actually enter the special SDBD mode for indirect reads:
+    if (this.state === "INDIRECT_READ:BAR" && this.d) {
+      this.state = "INDIRECT_SDBD_READ:BAR";
+    }
+  }
 
   step() {
     while (this.state !== "FETCH_OPCODE:BAR") {
@@ -449,38 +918,17 @@ export class CP1610 {
   }
 }
 
-type InstructionInfo = Readonly<{
-  instruction: string;
-  cycles: ReadonlyArray<number>;
-  interruptible: boolean;
-  in_s?: boolean;
-  in_z?: boolean;
-  in_o?: boolean;
-  in_c?: boolean;
-  in_d?: boolean;
-  out_s?: boolean;
-  out_z?: boolean;
-  out_o?: boolean;
-  out_c?: boolean;
-  out_i?: boolean;
-  out_d?: boolean;
-}>;
-type Mnemonic = string;
-type DecodedOpcode = {
-  [key: Mnemonic]: InstructionInfo;
-};
-
-const opcodeLookup: DecodedOpcode[] = [];
-for (const [rangeKey, matchingInstructions] of Object.entries(instructions)) {
+const opcodeLookup: InstructionConfig[] = [];
+for (const [rangeKey, instructionConfig] of Object.entries(instructions)) {
   const [start, end = start] = rangeKey
     .split("-")
     .map((str) => parseInt(str, 16)) as [number, number | undefined];
   for (let i = start; i <= end; ++i) {
-    opcodeLookup[i] = matchingInstructions;
+    opcodeLookup[i] = instructionConfig;
   }
 }
 
-const decodeOpcode = (opcode: number): DecodedOpcode | null => {
+const decodeOpcode = (opcode: number): InstructionConfig | null => {
   return opcodeLookup[opcode] ?? null;
 };
 

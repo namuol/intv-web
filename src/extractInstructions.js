@@ -125,12 +125,12 @@ for (const instruction of array) {
   const rangeKey = instruction.range
     .map((n) => n.toString(16).padStart(4, "0"))
     .join("-");
-  result[rangeKey] ??= {};
-  result[rangeKey][instruction.mnemonic] = {
-    ...instruction,
-    mnemonic: undefined,
-    range: undefined,
-  };
+  if (!result[rangeKey]) {
+    result[rangeKey] = {
+      ...instruction,
+      range: undefined,
+    };
+  }
 }
 
 console.log(`export default ${JSON.stringify(result)} as const;`);
