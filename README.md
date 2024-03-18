@@ -1,4 +1,4 @@
-# INTV JS
+# INTV-WEB
 
 An Intellivision emulator for the web.
 
