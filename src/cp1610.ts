@@ -450,13 +450,18 @@ export class CP1610 {
   bus: Bus;
 
   /**
-   * Current opcode we're executing.
+   * The last opcode read from the program counter's location.
    */
   opcode: number = 0x0000;
   /**
-   * Arguments that have been read for current opcode (if applicable)
+   * Arguments that have been read from memory for current instruction (if
+   * applicable)
    */
-  args: [number, number] = [0x0000, 0x0000];
+  args: [number, number] = new Uint16Array(2) as any;
+  /**
+   * The current instruction decoded from the last read opcode.
+   */
+  instruction: null | InstructionConfig = null;
 
   constructor(bus: Bus) {
     this.bus = bus;
@@ -516,7 +521,7 @@ export class CP1610 {
 
         // Here, the CPU needs to determine which state to enter next based on
         // the fetched instruction.
-        this._decodeOpcode();
+        this._decodeInstruction();
         break;
       }
 
@@ -547,8 +552,7 @@ export class CP1610 {
         // The device deasserts the bus, and no other bus activity occurs during
         // this cycle.
 
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -574,8 +578,7 @@ export class CP1610 {
       }
       case "INDIRECT_WRITE:NACT_1": {
         this.bus.nact();
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -621,8 +624,7 @@ export class CP1610 {
         // The device deasserts the bus, and no other bus activity occurs during
         // this cycle.
 
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -712,8 +714,7 @@ export class CP1610 {
         // The device deasserts the bus, and no other bus activity occurs during
         // this cycle.
 
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -768,8 +769,7 @@ export class CP1610 {
         // The CPU deasserts the bus, and no other bus activity occurs during
         // this cycle.
 
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -818,8 +818,7 @@ export class CP1610 {
         // this data. As with cycle 3, there is no NACT spacing cycle after this
         // cycle!
 
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+        this._executeInstruction();
         break;
       }
 
@@ -879,9 +878,8 @@ export class CP1610 {
         this.bus.nact();
         // The device deasserts the bus, and no other bus activity occurs during
         // this cycle.
-        
-        // TODO: Now what?
-        this.state = "FETCH_OPCODE:BAR";
+
+        this._executeInstruction();
         break;
       }
 
@@ -891,9 +889,9 @@ export class CP1610 {
     }
   }
 
-  _decodeOpcode() {
-    const instruction = decodeOpcode(this.opcode);
-    if (!instruction) {
+  _decodeInstruction() {
+    this.instruction = decodeOpcode(this.opcode);
+    if (!this.instruction) {
       console.error(
         `Uknown instruction opcode: $${this.opcode
           .toString(16)
@@ -902,12 +900,206 @@ export class CP1610 {
       this.state = "FETCH_OPCODE:BAR";
       return;
     }
-    this.state = INSTRUCTION_STATES[instruction.mnemonic];
+    this.state = INSTRUCTION_STATES[this.instruction.mnemonic];
 
     // If the double-byte flag is set, and we're making an indirect read next,
     // we want to actually enter the special SDBD mode for indirect reads:
     if (this.state === "INDIRECT_READ:BAR" && this.d) {
       this.state = "INDIRECT_SDBD_READ:BAR";
+    }
+  }
+
+  _executeInstruction() {
+    if (!this.instruction) {
+      throw new Error("No decoded instruction to execute");
+    }
+
+    switch (this.instruction.mnemonic) {
+      case "HLT": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SDBD": {
+        this.d = true;
+        return;
+      }
+      case "EIS": {
+        this.i = true;
+        return;
+      }
+      case "DIS": {
+        this.i = false;
+        return;
+      }
+      case "J": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "TCI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "CLRC": {
+        this.c = false;
+        return;
+      }
+      case "SETC": {
+        this.c = true;
+        return;
+      }
+      case "INCR": {
+        const i = decodeRegisterIndex(this.opcode);
+        this.r[i] = this.r[i] + 1;
+        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+        this.z = this.r[i] === 0;
+        return;
+      }
+      case "DECR": {
+        const i = decodeRegisterIndex(this.opcode);
+        this.r[i] = this.r[i] - 1;
+        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+        this.z = this.r[i] === 0;
+        return;
+      }
+      case "COMR": {
+        const i = decodeRegisterIndex(this.opcode);
+        this.r[i] = this.r[i] ^ 0xffff;
+        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+        this.z = this.r[i] === 0;
+        return;
+      }
+      case "NEGR": {
+        const i = decodeRegisterIndex(this.opcode);
+        this.r[i] = (this.r[i] ^ 0xffff) + 1;
+        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+        this.z = this.r[i] === 0;
+        // TODO: set the overflow flag
+        // TODO: set the carry flag
+        return;
+      }
+      case "ADCR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "GSWD": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "NOP": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SIN": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "RSWD": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SWAP": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SLL": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "RLC": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SLLC": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SLR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SAR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "RRC": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SARC": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MOVR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ADDR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SUBR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "CMPR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ANDR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "XORR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "B": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVO": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVO@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVOI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVI@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "MVII": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ADD": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ADD@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ADDI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SUB": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SUB@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "SUBI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "CMP": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "CMP@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "CMPI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "AND": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "AND@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "ANDI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "XOR": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "XOR@": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      case "XORI": {
+        throw new Error(`${this.instruction.mnemonic} not implemented`);
+      }
+      default: {
+        throw new UnreachableCaseError(this.instruction.mnemonic);
+      }
     }
   }
 
@@ -930,6 +1122,10 @@ for (const [rangeKey, instructionConfig] of Object.entries(instructions)) {
 
 const decodeOpcode = (opcode: number): InstructionConfig | null => {
   return opcodeLookup[opcode] ?? null;
+};
+
+const decodeRegisterIndex = (opcode: number): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => {
+  return (opcode & 0b0000_0000_0000_0111) as any;
 };
 
 export const forTestSuite = {
