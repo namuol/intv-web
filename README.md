@@ -2,6 +2,10 @@
 
 An Intellivision emulator for the web.
 
+## Status
+
+Nonfunctional. Just getting the basic boilerplate going.
+
 ## Why?
 
 There might be an INTV emulator for the web out there already, but I couldn't
