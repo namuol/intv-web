@@ -349,6 +349,7 @@ export class Bus {
     return this._data & 0xffff;
   }
   set data(_data: number) {
+    console.error(new Error(`bus.data = $${_data.toString(16)}`).stack);
     this._data = _data & 0xffff;
   }
 
@@ -453,6 +454,7 @@ export class CP1610 implements BusDevice {
   state: CpuState = "RESET:IAB";
 
   clock() {
+    console.error(this.state);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.state) {
@@ -691,7 +693,7 @@ export class CP1610 implements BusDevice {
           return;
         }
         if (this.ticks !== 3) return;
-        this.state = "FETCH_OPCODE:BAR";
+        this.state = "JUMP:NACT_7";
         break;
       }
       case "JUMP:NACT_7": {
@@ -700,6 +702,54 @@ export class CP1610 implements BusDevice {
           return;
         }
         if (this.ticks !== 3) return;
+
+        // Finally, handle the jump
+
+        // ```
+        // Format - Decle #1    Format - Decle #2    Format - Decle #3
+        // 0000:0000:0000:0100  0000:00rr:aaaa:aaff  0000:00aa:aaaa:aaaa
+        //
+        // where:
+        //
+        //     rr    indicates the register into which to store the return address
+        //           such that:
+        //               rr == 00    indicates to store return address in register R4
+        //               rr == 01    indicates register R5
+        //               rr == 10    indicates register R6
+        //               rr == 11    indicates that the CP1610 should not store the
+        //                           return address, signaling a Jump without return
+        //
+        //     ff    indicates how to affect the Interrupt (I) flag in the CP1610
+        //           such that:
+        //               ff == 00    indicates not to affect the Interrupt flag
+        //               ff == 01    indicates to set the Interrupt flag
+        //               ff == 10    indicates to clear the Interrupt flag
+        //               ff == 11    unknown opcode (behavior unknown!!)
+        //
+        //     aaaaaaaaaaaaaaaa    indicates the address to where the CP1610 should Jump
+        // ```
+
+        // prettier-ignore
+        {
+          const rr                = (0b0000_0011_0000_0000 & this.args[0]) >> 8;
+          const ff                = (0b0000_0000_0000_0011 & this.args[0]);
+          const aaaaaaaaaaaaaaaa  = ((0b0000_0000_1111_1100 & this.args[0]) << 8)
+                                  | (0b0000_0011_1111_1111 & this.args[1]);
+          
+          let regIndex = null;
+          switch (rr) {
+            case 0b00: {regIndex = 4; break;}
+            case 0b01: {regIndex = 5; break;}
+            case 0b10: {regIndex = 6; break;}
+          }
+          if (regIndex != null) {
+            this.r[regIndex] = this.r[7];
+          }
+          if (ff === 0b01) this.i = true;
+          if (ff === 0b10) this.i = false;
+          this.r[7] = aaaaaaaaaaaaaaaa;
+        }
+
         this.state = "FETCH_OPCODE:BAR";
         break;
       }
@@ -1301,12 +1351,6 @@ export class CP1610 implements BusDevice {
       }
     }
   }
-
-  step() {
-    while (this.state !== "FETCH_OPCODE:BAR") {
-      this.clock();
-    }
-  }
 }
 
 const opcodeLookup: InstructionConfig[] = [];
@@ -1337,6 +1381,7 @@ export class RAM implements BusDevice {
   _addr: number | null = null;
   bus: Bus;
   ticks: number = 0;
+  name: string = 'RAM';
 
   constructor(bus: Bus, start: number, end: number) {
     this.bus = bus;
@@ -1349,6 +1394,9 @@ export class RAM implements BusDevice {
 
     if (addr >= 0 && addr < this.data.length) {
       this._addr = addr;
+      console.error(
+        new Error(`this._addr = $${this._addr.toString(16)} (this.bus.data($${this.bus.data.toString(16)}) - this.start($${this.start.toString(16)}))`).stack,
+      );
     } else {
       this._addr = null;
     }
@@ -1359,17 +1407,21 @@ export class RAM implements BusDevice {
 
     const data = this.data[this._addr];
     if (data == null) return;
-
+    console.error(
+      new Error(`this.bus.data = $${data.toString(16)} (this._addr($${this._addr.toString(16)}))`).stack,
+    );
     this.bus.data = data;
+    this._addr = null;
   }
 
-  _writeDataOnBusToAddr() {
+  _readDataOnBusToAddr() {
     if (this._addr == null) return;
 
     this.data[this._addr] = this.bus.data;
   }
 
   clock(): void {
+    console.error(this.name);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.bus.flags) {
@@ -1381,7 +1433,6 @@ export class RAM implements BusDevice {
         // Latch the decoded address from the bus if it falls within our address
         // range:
         if (this.ticks === 3) return this._readAndDecodeAddr();
-
         return;
       }
       case Bus.DTB: {
@@ -1418,7 +1469,7 @@ export class RAM implements BusDevice {
         // being written is available for external memories to latch. The
         // CP-1600 allows two full CPU cycles for external RAM to latch the
         // data.
-        if (this.ticks === 3) return this._writeDataOnBusToAddr();
+        if (this.ticks === 3) return this._readDataOnBusToAddr();
         return;
       }
       case Bus.IAB: {
@@ -1458,6 +1509,8 @@ export class RAM implements BusDevice {
 }
 
 export class ROM extends RAM {
+  name: string = 'ROM';
+
   constructor(bus: Bus, start: number, data: Uint16Array) {
     super(bus, start, start + data.length);
     // Marginally wasteful since we throw out the original `data` - yeah yeah,
@@ -1465,9 +1518,7 @@ export class ROM extends RAM {
     this.data = data;
   }
 
-  _writeDataOnBusToAddr() {
+  _readDataOnBusToAddr() {
     // Do nothing. Hence, read-only.
   }
 }
-
-export class ExecROM extends ROM {}

@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 roms/*.bin
+roms/*.int
+roms/*.asm

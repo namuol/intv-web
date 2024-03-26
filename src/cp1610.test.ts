@@ -8,6 +8,11 @@ describe("CP1610", () => {
   test("Basic RESET functionality", () => {
     const bus = new Bus();
     const cpu = new CP1610(bus);
+    const step = () => {
+      while (cpu.state !== "FETCH_OPCODE:BAR") {
+        cpu.clock();
+      }
+    };
 
     expect(cpu.r[7]).toBe(0);
     expect(cpu.state).toBe("RESET:IAB");
@@ -15,7 +20,7 @@ describe("CP1610", () => {
     // Fake the exec ROM asserting the reset vector address on the bus:
     bus.data = 0x1000;
 
-    cpu.step();
+    step();
     expect(cpu.r[7]).toBe(0x1000);
     expect(cpu.state).toBe("FETCH_OPCODE:BAR");
   });
@@ -44,7 +49,7 @@ describe("decodeOpcode", () => {
 });
 
 describe("bus devices", () => {
-  test("clock", () => {
+  test("basic instruction fetching and jumping", () => {
     const bus = new Bus();
 
     const execRomBuffer = fs.readFileSync("./roms/exec.bin");
@@ -68,6 +73,12 @@ describe("bus devices", () => {
       tick();
       tick();
       tick();
+    };
+
+    const step = () => {
+      while (cpu.state !== "FETCH_OPCODE:BAR") {
+        tick();
+      }
     };
 
     // Initialization sequence; CPU should first initialize its PC to $1000:
@@ -138,5 +149,39 @@ describe("bus devices", () => {
       expect(bus.flags).toBe(Bus.NACT);
       microCycle();
     }
+
+    // Skip over the rest of the NACTs:
+    step();
+
+    expect(cpu.r[7]).toBe(0x1026);
+    // JSRD should disable Interrupt Enable flag
+    expect(cpu.i).toBe(false);
+    // Return address should be stored in R5
+    expect(cpu.r[5]).toBe(0x1003);
+
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+
+    // Begin opcode fetch; CPU should assert PC to bus:
+    expect(bus.flags).toBe(Bus.BAR);
+    microCycle();
+    expect(bus.data).toBe(0x1026);
+    expect(cpu.r[7]).toBe(0x1027);
+    // NACT:
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+    // Now the ROM should assert data at $1026 to bus:
+    expect(bus.flags).toBe(Bus.DTB);
+    microCycle();
+    expect(bus.data).toBe(0x02be);
+    // ...and the CPU should have read the bus data into its next opcode
+    expect(cpu.opcode).toBe(0x02be);
+
+    // While in NACT, CPU then decodes the opcode into an instruction
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+
+    // ...which should be MVII instruction
+    expect(cpu.instruction?.mnemonic).toBe("MVII");
   });
 });
