@@ -175,11 +175,11 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   TCI: "INDIRECT_READ:BAR",
   CLRC: "INDIRECT_READ:BAR",
   SETC: "INDIRECT_READ:BAR",
-  INCR: "INDIRECT_READ:BAR",
-  DECR: "INDIRECT_READ:BAR",
-  COMR: "INDIRECT_READ:BAR",
-  NEGR: "INDIRECT_READ:BAR",
-  ADCR: "INDIRECT_READ:BAR",
+  INCR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  DECR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  COMR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  NEGR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  ADCR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   GSWD: "INDIRECT_READ:BAR",
   NOP: "INDIRECT_READ:BAR",
   SIN: "INDIRECT_READ:BAR",
@@ -193,11 +193,11 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   RRC: "INDIRECT_READ:BAR",
   SARC: "INDIRECT_READ:BAR",
   MOVR: "INDIRECT_READ:BAR",
-  ADDR: "INDIRECT_READ:BAR",
-  SUBR: "INDIRECT_READ:BAR",
-  CMPR: "INDIRECT_READ:BAR",
-  ANDR: "INDIRECT_READ:BAR",
-  XORR: "INDIRECT_READ:BAR",
+  ADDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  SUBR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  CMPR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  ANDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
+  XORR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   B: "INDIRECT_READ:BAR",
   MVO: "INDIRECT_WRITE:BAR",
   "MVO@": "INDIRECT_WRITE:BAR",
@@ -228,6 +228,7 @@ interface BusDevice {
 }
 
 type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
+type RegisterIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export class Bus {
   /**
@@ -552,10 +553,9 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Instruction or Data to read. Devices
         // should latch the address at this time and perform address decoding.
-        const regIndex = (this.opcode & 0b0000_0000_0011_1000) >> 3;
-        this.bus.data = this.r[regIndex] || 0;
-        if (regIndex === 6) {
-          this.r[regIndex] -= 1;
+        this.bus.data = this.r[this.reg0] || 0;
+        if (this.reg0 === 6) {
+          this.r[this.reg0] -= 1;
         }
         this.r[7] += 1;
         this.state = "INDIRECT_READ:NACT_0";
@@ -776,11 +776,7 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Data to write. Devices should latch the
         // address at this time and perform address decoding.
-        const regIndex = (this.opcode & 0b0000_0000_0011_1000) >> 3;
-        if (regIndex === 6) {
-          this.r[regIndex] += 1;
-        }
-        this.bus.data = this.r[regIndex] || 0;
+        this.bus.data = this.r[this.reg0] || 0;
         this.state = "INDIRECT_WRITE:NACT_0";
         break;
       }
@@ -804,8 +800,7 @@ export class CP1610 implements BusDevice {
         // The CPU asserts the data to be written. The addressed device can
         // latch the data at this time, although it is not necessary yet, as the
         // data is stable through the next phase.
-        const regIndex = this.opcode & 0b0000_0000_0000_0111;
-        this.bus.data = this.r[regIndex] || 0;
+        this.bus.data = this.r[this.reg0];
         this.state = "INDIRECT_WRITE:DWS";
         break;
       }
@@ -817,6 +812,7 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // The CPU continues to assert the data to be written. The addressed
         // device can latch the data at this time if it hasn't already.
+        this.bus.data = this.r[this.reg0];
         this.state = "INDIRECT_WRITE:NACT_1";
         break;
       }
@@ -828,6 +824,14 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // The CPU deasserts the bus, and no other bus activity occurs during
         // this cycle.
+
+        // If the address register specified is R4-R7 (the auto-incrementing
+        // registers), then the value in the address register will be
+        // incremented by one after the value in the source register has been
+        // stored at the designated address.
+        if (this.reg0 >= 4) {
+          this.r[this.reg0] += 1;
+        }
         this._executeInstruction();
         break;
       }
@@ -1158,8 +1162,31 @@ export class CP1610 implements BusDevice {
     }
   }
 
+  /**
+   * Decoded from the current opcode.
+   *
+   * Register index in opcodes with this form:
+   *
+   * ```txt
+   * 0000:0000:00rr:r000
+   * ```
+   */
+  reg0: RegisterIndex = 0;
+  /**
+   * Decoded from the current opcode.
+   *
+   * Register index in opcodes with this form:
+   *
+   * ```txt
+   * 0000:0000:0000:0rrr
+   * ```
+   */
+  reg1: RegisterIndex = 0;
+
   _decodeInstruction() {
     this.instruction = decodeOpcode(this.opcode);
+    this.reg0 = ((0b0000_0000_0011_1000 & this.opcode) >> 3) as RegisterIndex;
+    this.reg1 = (0b0000_0000_0000_0111 & this.opcode) as RegisterIndex;
     if (!this.instruction) {
       console.error(
         `Uknown instruction opcode: $${this.opcode
@@ -1191,14 +1218,17 @@ export class CP1610 implements BusDevice {
       }
       case "SDBD": {
         this.d = true;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "EIS": {
         this.i = true;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "DIS": {
         this.i = false;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "J": {
@@ -1209,10 +1239,12 @@ export class CP1610 implements BusDevice {
       }
       case "CLRC": {
         this.c = false;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "SETC": {
         this.c = true;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "INCR": {
@@ -1220,6 +1252,7 @@ export class CP1610 implements BusDevice {
         this.r[i] = this.r[i] + 1;
         this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
         this.z = this.r[i] === 0;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "DECR": {
@@ -1227,6 +1260,7 @@ export class CP1610 implements BusDevice {
         this.r[i] = this.r[i] - 1;
         this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
         this.z = this.r[i] === 0;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "COMR": {
@@ -1234,6 +1268,7 @@ export class CP1610 implements BusDevice {
         this.r[i] = this.r[i] ^ 0xffff;
         this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
         this.z = this.r[i] === 0;
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "NEGR": {
@@ -1242,6 +1277,7 @@ export class CP1610 implements BusDevice {
         this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
         this.z = this.r[i] === 0;
         // TODO: set the overflow flag TODO: set the carry flag
+        this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "ADCR": {
@@ -1299,7 +1335,12 @@ export class CP1610 implements BusDevice {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
       }
       case "XORR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
+        const result = this.r[this.reg1] ^ this.r[this.reg0];
+        this.z = result === 0;
+        this.s = (result & 0b1000_0000_0000_0000) !== 0;
+        this.r[this.reg1] = result;
+        this.state = "FETCH_OPCODE:BAR";
+        return;
       }
       case "B": {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
@@ -1313,8 +1354,7 @@ export class CP1610 implements BusDevice {
       case "MVI@":
       case "MVI":
       case "MVII": {
-        const ddd = 0b0000_0000_0000_0111 & this.opcode;
-        this.r[ddd] = this.args[0];
+        this.r[this.reg1] = this.args[0];
         this.state = "FETCH_OPCODE:BAR";
         return;
       }
@@ -1384,7 +1424,7 @@ export const decodeOpcode = (opcode: number): InstructionConfig | null => {
   return opcodeLookup[opcode] ?? null;
 };
 
-const decodeRegisterIndex = (opcode: number): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => {
+const decodeRegisterIndex = (opcode: number): RegisterIndex => {
   return (opcode & 0b0000_0000_0000_0111) as any;
 };
 

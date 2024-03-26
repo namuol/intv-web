@@ -3,7 +3,6 @@ import fs from "fs";
 import glob from "glob-promise";
 
 import {Bus, CP1610, RAM, ROM, forTestSuite} from "./cp1610";
-import { mainModule } from "process";
 
 const {decodeOpcode} = forTestSuite;
 
@@ -200,12 +199,6 @@ describe("jzIntv fixtures", async () => {
         cycles += 1;
         devices.forEach((device) => device.clock());
       };
-      const microCycle = () => {
-        tick();
-        tick();
-        tick();
-        tick();
-      };
 
       const step = () => {
         while (cpu.state === "FETCH_OPCODE:BAR") {
@@ -300,11 +293,13 @@ describe("jzIntv fixtures", async () => {
             const data = peekBus(pc + 1);
             return `MVII #${word(data)},R${reg1Index}`;
           }
+
+          case "MVO@":
           case "MVOI": {
             if (reg0Index === 6) {
               return `PSHR R${reg1Index}`;
             } else {
-              return `MVOI R${reg1Index}`;
+              return `${instruction.mnemonic} R${reg1Index},R${reg0Index}`;
             }
           }
 
@@ -313,6 +308,10 @@ describe("jzIntv fixtures", async () => {
               return `CLRR R${reg0Index}`;
             }
             return `XORR R${reg0Index}, R${reg1Index}`;
+          }
+
+          case "DECR": {
+            return `DECR R${reg1Index}`;
           }
         }
 
@@ -332,7 +331,7 @@ describe("jzIntv fixtures", async () => {
           .replace(/  +/g, "|")
           // TODO: Do we want to try and match cycle count of jzIntv?
           .split("|")
-          .slice(0, -1);
+          .slice(0, -1).join(',');
 
       // Hackish: Allow reset sequence to do its thing
       step();
@@ -341,15 +340,20 @@ describe("jzIntv fixtures", async () => {
       cycles = 0;
 
       expect(lines.length).toBeGreaterThan(0);
+      let prevLine = null;
       for (let lineNumber = 0; lineNumber < lines.length; ++lineNumber) {
-        const line = lines[lineNumber]!;
+        const line_ = lines[lineNumber]!;
         // Not yet checking reads/writes
-        if (line.startsWith("RD") || line.startsWith("WR")) continue;
+        if (line_.startsWith("RD") || line_.startsWith("WR")) continue;
         const prefix = `${lineNumber + 1}: `;
-        expect(prefix + normalizeLine(cpuStatus())).toEqual(
-          prefix + normalizeLine(line),
-        );
+        const line = prefix + normalizeLine(line_);
+        expect(
+          (prevLine ? prevLine + "\n" : "") +
+            prefix +
+            normalizeLine(cpuStatus()),
+        ).toEqual((prevLine ? prevLine + "\n" : "") + line);
         step();
+        prevLine = line;
       }
     });
   }
