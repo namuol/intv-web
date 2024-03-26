@@ -199,9 +199,9 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   ANDR: "INDIRECT_READ:BAR",
   XORR: "INDIRECT_READ:BAR",
   B: "INDIRECT_READ:BAR",
-  MVO: "INDIRECT_READ:BAR",
-  "MVO@": "INDIRECT_READ:BAR",
-  MVOI: "INDIRECT_READ:BAR",
+  MVO: "INDIRECT_WRITE:BAR",
+  "MVO@": "INDIRECT_WRITE:BAR",
+  MVOI: "INDIRECT_WRITE:BAR",
   MVI: "INDIRECT_READ:BAR",
   "MVI@": "INDIRECT_READ:BAR",
   MVII: "INDIRECT_READ:BAR",
@@ -441,6 +441,10 @@ export class CP1610 implements BusDevice {
    * The current instruction decoded from the last read opcode.
    */
   instruction: null | InstructionConfig = null;
+  /**
+   * The previous instruction
+   */
+  prevInstruction: null | InstructionConfig = null;
   ticks: number = 0;
 
   constructor(bus: Bus) {
@@ -548,7 +552,11 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Instruction or Data to read. Devices
         // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
+        const regIndex = (this.opcode & 0b0000_0000_0011_1000) >> 3;
+        this.bus.data = this.r[regIndex] || 0;
+        if (regIndex === 6) {
+          this.r[regIndex] -= 1;
+        }
         this.r[7] += 1;
         this.state = "INDIRECT_READ:NACT_0";
         break;
@@ -572,6 +580,7 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // The addressed device asserts its data on the bus. The CPU then reads
         // this data.
+        this.args[0] = this.bus.data;
         this.state = "INDIRECT_READ:NACT_1";
         break;
       }
@@ -584,7 +593,6 @@ export class CP1610 implements BusDevice {
 
         // The device deasserts the bus, and no other bus activity occurs during
         // this cycle.
-
         this._executeInstruction();
         break;
       }
@@ -768,8 +776,11 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Data to write. Devices should latch the
         // address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
+        const regIndex = (this.opcode & 0b0000_0000_0011_1000) >> 3;
+        if (regIndex === 6) {
+          this.r[regIndex] += 1;
+        }
+        this.bus.data = this.r[regIndex] || 0;
         this.state = "INDIRECT_WRITE:NACT_0";
         break;
       }
@@ -793,6 +804,8 @@ export class CP1610 implements BusDevice {
         // The CPU asserts the data to be written. The addressed device can
         // latch the data at this time, although it is not necessary yet, as the
         // data is stable through the next phase.
+        const regIndex = this.opcode & 0b0000_0000_0000_0111;
+        this.bus.data = this.r[regIndex] || 0;
         this.state = "INDIRECT_WRITE:DWS";
         break;
       }
@@ -1170,6 +1183,8 @@ export class CP1610 implements BusDevice {
       throw new Error("No decoded instruction to execute");
     }
 
+    this.prevInstruction = this.instruction;
+
     switch (this.instruction.mnemonic) {
       case "HLT": {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
@@ -1289,23 +1304,19 @@ export class CP1610 implements BusDevice {
       case "B": {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
       }
-      case "MVO": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "MVO@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
+      case "MVO@":
+      case "MVO":
       case "MVOI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
+        this.state = "FETCH_OPCODE:BAR";
+        return;
       }
-      case "MVI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "MVI@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
+      case "MVI@":
+      case "MVI":
       case "MVII": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
+        const ddd = 0b0000_0000_0000_0111 & this.opcode;
+        this.r[ddd] = this.args[0];
+        this.state = "FETCH_OPCODE:BAR";
+        return;
       }
       case "ADD": {
         throw new Error(`${this.instruction.mnemonic} not implemented`);

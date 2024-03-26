@@ -3,30 +3,31 @@ import fs from "fs";
 import glob from "glob-promise";
 
 import {Bus, CP1610, RAM, ROM, forTestSuite} from "./cp1610";
+import { mainModule } from "process";
 
 const {decodeOpcode} = forTestSuite;
 
-// describe("decodeOpcode", () => {
-//   const tests = [
-//     {addrs: [0x0000], mnemonic: "HLT"},
-//     {addrs: [0x0001], mnemonic: "SDBD"},
-//     {addrs: [0x0004], mnemonic: "J"},
-//     {
-//       addrs: [0x0200, 0x222, 0x23f],
-//       mnemonic: "B",
-//     },
-//   ] as const;
-//   for (const {addrs, mnemonic} of tests) {
-//     test(mnemonic, () => {
-//       for (const addr of addrs) {
-//         const instructionConfig = decodeOpcode(addr);
-//         expect(instructionConfig).toBeDefined();
-//         expect(instructionConfig).toBeDefined();
-//         expect(instructionConfig?.mnemonic).toBe(mnemonic);
-//       }
-//     });
-//   }
-// });
+describe("decodeOpcode", () => {
+  const tests = [
+    {addrs: [0x0000], mnemonic: "HLT"},
+    {addrs: [0x0001], mnemonic: "SDBD"},
+    {addrs: [0x0004], mnemonic: "J"},
+    {
+      addrs: [0x0200, 0x222, 0x23f],
+      mnemonic: "B",
+    },
+  ] as const;
+  for (const {addrs, mnemonic} of tests) {
+    test(mnemonic, () => {
+      for (const addr of addrs) {
+        const instructionConfig = decodeOpcode(addr);
+        expect(instructionConfig).toBeDefined();
+        expect(instructionConfig).toBeDefined();
+        expect(instructionConfig?.mnemonic).toBe(mnemonic);
+      }
+    });
+  }
+});
 
 const readRomIntoUint16Array = (path: string) => {
   const romBuffer = fs.readFileSync(path);
@@ -37,135 +38,135 @@ const readRomIntoUint16Array = (path: string) => {
   return romData;
 };
 
-// describe("bus devices", () => {
-//   test("basic instruction fetching and jumping", () => {
-//     const bus = new Bus();
-//     const cpu = new CP1610(bus);
-//     const devices = [
-//       cpu,
-//       // Rough approximation of various RAM devices:
-//       new RAM(bus, 0x0000, 0x1000),
-//       // Rough approximation of EXEC ROM
-//       new ROM(bus, 0x1000, readRomIntoUint16Array("./roms/exec.bin")),
-//     ];
-//     const tick = () => devices.forEach((device) => device.clock());
-//     const microCycle = () => {
-//       tick();
-//       tick();
-//       tick();
-//       tick();
-//     };
+describe("bus devices", () => {
+  test("basic instruction fetching and jumping", () => {
+    const bus = new Bus();
+    const cpu = new CP1610(bus);
+    const devices = [
+      cpu,
+      // Rough approximation of various RAM devices:
+      new RAM(bus, 0x0000, 0x1000),
+      // Rough approximation of EXEC ROM
+      new ROM(bus, 0x1000, readRomIntoUint16Array("./roms/exec.bin")),
+    ];
+    const tick = () => devices.forEach((device) => device.clock());
+    const microCycle = () => {
+      tick();
+      tick();
+      tick();
+      tick();
+    };
 
-//     const step = () => {
-//       while (cpu.state !== "FETCH_OPCODE:BAR") {
-//         tick();
-//       }
-//     };
+    const step = () => {
+      while (cpu.state !== "FETCH_OPCODE:BAR") {
+        tick();
+      }
+    };
 
-//     // Initialization sequence; CPU should first initialize its PC to $1000:
-//     microCycle();
-//     expect(cpu.r[7]).toEqual(0x1000);
+    // Initialization sequence; CPU should first initialize its PC to $1000:
+    microCycle();
+    expect(cpu.r[7]).toEqual(0x1000);
 
-//     // Wait one NACT cycle:
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
-//     // Begin opcode fetch; CPU should assert PC to bus:
-//     expect(bus.flags).toBe(Bus.BAR);
-//     microCycle();
-//     expect(bus.data).toBe(0x1000);
-//     expect(cpu.r[7]).toBe(0x1001);
-//     // NACT:
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
-//     // Now the ROM should assert data at $1000 to bus:
-//     expect(bus.flags).toBe(Bus.DTB);
-//     microCycle();
-//     expect(bus.data).toBe(0x0004);
-//     // ...and the CPU should have read the bus data into its next opcode
-//     expect(cpu.opcode).toBe(0x0004);
+    // Wait one NACT cycle:
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+    // Begin opcode fetch; CPU should assert PC to bus:
+    expect(bus.flags).toBe(Bus.BAR);
+    microCycle();
+    expect(bus.data).toBe(0x1000);
+    expect(cpu.r[7]).toBe(0x1001);
+    // NACT:
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+    // Now the ROM should assert data at $1000 to bus:
+    expect(bus.flags).toBe(Bus.DTB);
+    microCycle();
+    expect(bus.data).toBe(0x0004);
+    // ...and the CPU should have read the bus data into its next opcode
+    expect(cpu.opcode).toBe(0x0004);
 
-//     // While in NACT, CPU then decodes the opcode into an instruction
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
+    // While in NACT, CPU then decodes the opcode into an instruction
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
 
-//     // ...which should be JUMP instruction
-//     expect(cpu.instruction?.mnemonic).toBe("J");
+    // ...which should be JUMP instruction
+    expect(cpu.instruction?.mnemonic).toBe("J");
 
-//     // Now we should read two more decles as arguments to the Jump instruction
+    // Now we should read two more decles as arguments to the Jump instruction
 
-//     // Read first argument...
-//     {
-//       expect(bus.flags).toBe(Bus.BAR);
-//       microCycle();
-//       expect(bus.data).toBe(0x1001);
+    // Read first argument...
+    {
+      expect(bus.flags).toBe(Bus.BAR);
+      microCycle();
+      expect(bus.data).toBe(0x1001);
 
-//       expect(bus.flags).toBe(Bus.NACT);
-//       microCycle();
+      expect(bus.flags).toBe(Bus.NACT);
+      microCycle();
 
-//       expect(bus.flags).toBe(Bus.DTB);
-//       microCycle();
-//       expect(bus.data).toBe(0x0112);
-//       // First argument read:
-//       expect(cpu.args[0]).toBe(0x0112);
+      expect(bus.flags).toBe(Bus.DTB);
+      microCycle();
+      expect(bus.data).toBe(0x0112);
+      // First argument read:
+      expect(cpu.args[0]).toBe(0x0112);
 
-//       expect(bus.flags).toBe(Bus.NACT);
-//       microCycle();
-//     }
+      expect(bus.flags).toBe(Bus.NACT);
+      microCycle();
+    }
 
-//     // Read second argument...
-//     {
-//       expect(bus.flags).toBe(Bus.BAR);
-//       microCycle();
-//       expect(bus.data).toBe(0x1002);
+    // Read second argument...
+    {
+      expect(bus.flags).toBe(Bus.BAR);
+      microCycle();
+      expect(bus.data).toBe(0x1002);
 
-//       expect(bus.flags).toBe(Bus.NACT);
-//       microCycle();
+      expect(bus.flags).toBe(Bus.NACT);
+      microCycle();
 
-//       expect(bus.flags).toBe(Bus.DTB);
-//       microCycle();
-//       expect(bus.data).toBe(0x0026);
-//       // Second argument read:
-//       expect(cpu.args[1]).toBe(0x0026);
+      expect(bus.flags).toBe(Bus.DTB);
+      microCycle();
+      expect(bus.data).toBe(0x0026);
+      // Second argument read:
+      expect(cpu.args[1]).toBe(0x0026);
 
-//       expect(bus.flags).toBe(Bus.NACT);
-//       microCycle();
-//     }
+      expect(bus.flags).toBe(Bus.NACT);
+      microCycle();
+    }
 
-//     // Skip over the rest of the NACTs:
-//     step();
+    // Skip over the rest of the NACTs:
+    step();
 
-//     expect(cpu.r[7]).toBe(0x1026);
-//     // JSRD should disable Interrupt Enable flag
-//     expect(cpu.i).toBe(false);
-//     // Return address should be stored in R5
-//     expect(cpu.r[5]).toBe(0x1003);
+    expect(cpu.r[7]).toBe(0x1026);
+    // JSRD should disable Interrupt Enable flag
+    expect(cpu.i).toBe(false);
+    // Return address should be stored in R5
+    expect(cpu.r[5]).toBe(0x1003);
 
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
 
-//     // Begin opcode fetch; CPU should assert PC to bus:
-//     expect(bus.flags).toBe(Bus.BAR);
-//     microCycle();
-//     expect(bus.data).toBe(0x1026);
-//     expect(cpu.r[7]).toBe(0x1027);
-//     // NACT:
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
-//     // Now the ROM should assert data at $1026 to bus:
-//     expect(bus.flags).toBe(Bus.DTB);
-//     microCycle();
-//     expect(bus.data).toBe(0x02be);
-//     // ...and the CPU should have read the bus data into its next opcode
-//     expect(cpu.opcode).toBe(0x02be);
+    // Begin opcode fetch; CPU should assert PC to bus:
+    expect(bus.flags).toBe(Bus.BAR);
+    microCycle();
+    expect(bus.data).toBe(0x1026);
+    expect(cpu.r[7]).toBe(0x1027);
+    // NACT:
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
+    // Now the ROM should assert data at $1026 to bus:
+    expect(bus.flags).toBe(Bus.DTB);
+    microCycle();
+    expect(bus.data).toBe(0x02be);
+    // ...and the CPU should have read the bus data into its next opcode
+    expect(cpu.opcode).toBe(0x02be);
 
-//     // While in NACT, CPU then decodes the opcode into an instruction
-//     expect(bus.flags).toBe(Bus.NACT);
-//     microCycle();
+    // While in NACT, CPU then decodes the opcode into an instruction
+    expect(bus.flags).toBe(Bus.NACT);
+    microCycle();
 
-//     // ...which should be MVII instruction
-//     expect(cpu.instruction?.mnemonic).toBe("MVII");
-//   });
-// });
+    // ...which should be MVII instruction
+    expect(cpu.instruction?.mnemonic).toBe("MVII");
+  });
+});
 
 const word = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
 
@@ -232,7 +233,7 @@ describe("jzIntv fixtures", async () => {
           cpu.c ? "C" : "-",
           cpu.i ? "I" : "-",
           cpu.d ? "D" : "-",
-          "-", // TODO: interruptable instruction?
+          cpu.prevInstruction?.interruptible ? "i" : "-",
           "-", // TODO: interrupt state info
         ].join("");
 
@@ -240,6 +241,8 @@ describe("jzIntv fixtures", async () => {
         const pc = cpu.r[7];
         const opcode = peekBus(pc);
         const instruction = decodeOpcode(opcode);
+        const reg0Index = (0b0000_0000_0011_1000 & opcode) >> 3;
+        const reg1Index = 0b0000_0000_0000_0111 & opcode;
 
         if (!instruction) return "UNKNOWN";
         switch (instruction.mnemonic) {
@@ -273,15 +276,15 @@ describe("jzIntv fixtures", async () => {
               case 0b10: {
                 switch (ff) {
                   case 0b00: {
-                    mnemonic = "JSR";
+                    mnemonic = "JSR,";
                     break;
                   }
                   case 0b01: {
-                    mnemonic = "JSRE";
+                    mnemonic = "JSRE ";
                     break;
                   }
                   case 0b10: {
-                    mnemonic = "JSRD";
+                    mnemonic = "JSRD ";
                     break;
                   }
                 }
@@ -289,14 +292,27 @@ describe("jzIntv fixtures", async () => {
               }
             }
             if (regIndex !== null) {
-              return `${mnemonic} R${regIndex},${word(addr)}`;
+              return `${mnemonic}R${regIndex},${word(addr)}`;
             }
             return mnemonic;
           }
           case "MVII": {
-            const regIndex = 0b0000_0000_0000_0111 & opcode;
             const data = peekBus(pc + 1);
-            return `MVII #${word(data)},R${regIndex}`;
+            return `MVII #${word(data)},R${reg1Index}`;
+          }
+          case "MVOI": {
+            if (reg0Index === 6) {
+              return `PSHR R${reg1Index}`;
+            } else {
+              return `MVOI R${reg1Index}`;
+            }
+          }
+
+          case "XORR": {
+            if (reg0Index === reg1Index) {
+              return `CLRR R${reg0Index}`;
+            }
+            return `XORR R${reg0Index}, R${reg1Index}`;
           }
         }
 
@@ -304,7 +320,8 @@ describe("jzIntv fixtures", async () => {
       };
 
       const cpuStatus = () => {
-        const reg = (n: number) => n.toString(16).padStart(4, "0");
+        const reg = (n: number) =>
+          n.toString(16).toUpperCase().padStart(4, "0");
         return `${[...cpu.r]
           .map(reg)
           .join(" ")} ${cpuFlags()}  ${cpuCurrentInstruction()}|${cycles / 4}`;
@@ -328,7 +345,7 @@ describe("jzIntv fixtures", async () => {
         const line = lines[lineNumber]!;
         // Not yet checking reads/writes
         if (line.startsWith("RD") || line.startsWith("WR")) continue;
-        const prefix = `${lineNumber}: `;
+        const prefix = `${lineNumber + 1}: `;
         expect(prefix + normalizeLine(cpuStatus())).toEqual(
           prefix + normalizeLine(line),
         );
