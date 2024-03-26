@@ -224,6 +224,7 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
 
 interface BusDevice {
   clock(): void;
+  debug_read(addr: number): null | number;
 }
 
 type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
@@ -447,8 +448,13 @@ export class CP1610 implements BusDevice {
     this._reset();
   }
 
+  debug_read(_: number): number | null {
+    return null;
+  }
+
   _reset() {
     this.state = "RESET:IAB";
+    this.r[7] = CP1610.RESET_VECTOR;
   }
 
   state: CpuState = "RESET:IAB";
@@ -733,7 +739,7 @@ export class CP1610 implements BusDevice {
         {
           const rr                = (0b0000_0011_0000_0000 & this.args[0]) >> 8;
           const ff                = (0b0000_0000_0000_0011 & this.args[0]);
-          const aaaaaaaaaaaaaaaa  = ((0b0000_0000_1111_1100 & this.args[0]) << 8)
+          const aaaaaaaaaaaaaaaa  = (0b0000_0000_1111_1100 & this.args[0]) << 8
                                   | (0b0000_0011_1111_1111 & this.args[1]);
           
           let regIndex = null;
@@ -1363,7 +1369,7 @@ for (const [rangeKey, instructionConfig] of Object.entries(instructions)) {
   }
 }
 
-const decodeOpcode = (opcode: number): InstructionConfig | null => {
+export const decodeOpcode = (opcode: number): InstructionConfig | null => {
   return opcodeLookup[opcode] ?? null;
 };
 
@@ -1381,12 +1387,19 @@ export class RAM implements BusDevice {
   _addr: number | null = null;
   bus: Bus;
   ticks: number = 0;
-  name: string = 'RAM';
+  name: string = "RAM";
 
   constructor(bus: Bus, start: number, end: number) {
     this.bus = bus;
     this.start = start;
     this.data = new Uint16Array(end - start);
+  }
+
+  debug_read(addrIn: number): number | null {
+    const addr = addrIn - this.start;
+    const data = this.data[addr];
+    if (data == null) return null;
+    return data;
   }
 
   _readAndDecodeAddr() {
@@ -1395,7 +1408,13 @@ export class RAM implements BusDevice {
     if (addr >= 0 && addr < this.data.length) {
       this._addr = addr;
       console.error(
-        new Error(`this._addr = $${this._addr.toString(16)} (this.bus.data($${this.bus.data.toString(16)}) - this.start($${this.start.toString(16)}))`).stack,
+        new Error(
+          `this._addr = $${this._addr.toString(
+            16,
+          )} (this.bus.data($${this.bus.data.toString(
+            16,
+          )}) - this.start($${this.start.toString(16)}))`,
+        ).stack,
       );
     } else {
       this._addr = null;
@@ -1408,7 +1427,11 @@ export class RAM implements BusDevice {
     const data = this.data[this._addr];
     if (data == null) return;
     console.error(
-      new Error(`this.bus.data = $${data.toString(16)} (this._addr($${this._addr.toString(16)}))`).stack,
+      new Error(
+        `this.bus.data = $${data.toString(
+          16,
+        )} (this._addr($${this._addr.toString(16)}))`,
+      ).stack,
     );
     this.bus.data = data;
     this._addr = null;
@@ -1509,7 +1532,7 @@ export class RAM implements BusDevice {
 }
 
 export class ROM extends RAM {
-  name: string = 'ROM';
+  name: string = "ROM";
 
   constructor(bus: Bus, start: number, data: Uint16Array) {
     super(bus, start, start + data.length);
