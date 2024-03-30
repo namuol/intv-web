@@ -289,9 +289,14 @@ describe("jzIntv fixtures", async () => {
             }
             return mnemonic;
           }
+          case "MVI@":
           case "MVII": {
-            const data = peekBus(pc + 1);
-            return `MVII #${word(data)},R${reg1Index}`;
+            if (reg0Index === 6) {
+              return `PULR R${reg1Index}`;
+            } else {
+              const data = peekBus(pc + 1);
+              return `MVII #${word(data)},R${reg1Index}`;
+            }
           }
 
           case "MVO@":
@@ -313,6 +318,37 @@ describe("jzIntv fixtures", async () => {
           case "DECR": {
             return `DECR R${reg1Index}`;
           }
+
+          case "B": {
+            const direction = 0b0000_0000_0010_0000 & opcode ? -1 : 1;
+            const addr = pc + (direction * peekBus(pc + 1) + 1);
+
+            // prettier-ignore
+            const mnemonic = (() => {
+              if (opcode === 0x020F || opcode === 0x022F) {
+                return'BEXT';
+              }
+              switch (0b0000_0000_0000_1111 & opcode) {
+                case 0b0000: return 'B';
+                case 0b0001: return 'BC';
+                case 0b0010: return 'BOV';
+                case 0b0011: return 'BPL';
+                case 0b0101: return 'BLT';
+                case 0b0110: return 'BLE';
+                case 0b0111: return 'BUSC';
+                case 0b1000: return 'NOPP';
+                case 0b1001: return 'BNC';
+                case 0b1010: return 'BNOV';
+                case 0b1011: return 'BMI';
+                case 0b1100: return 'BNEQ';
+                case 0b1101: return 'BGE';
+                // FIXME: What about BGT? Same discriminator bits? Wiki is either wrong or missing info
+                case 0b1110: return 'BGT';
+                case 0b1111: return 'BESC';
+              }
+            })();
+            return `${mnemonic} ${word(addr)}`;
+          }
         }
 
         return instruction.mnemonic;
@@ -331,7 +367,8 @@ describe("jzIntv fixtures", async () => {
           .replace(/  +/g, "|")
           // TODO: Do we want to try and match cycle count of jzIntv?
           .split("|")
-          .slice(0, -1).join(',');
+          .slice(0, -1)
+          .join(",");
 
       // Hackish: Allow reset sequence to do its thing
       step();

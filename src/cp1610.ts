@@ -103,7 +103,7 @@ type CpuState =
   | "INDIRECT_READ:NACT_0"
   | "INDIRECT_READ:DTB"
   | "INDIRECT_READ:NACT_1"
-  // Jump instructions take 12 cycles, and we need to read 2 bytes following the
+  // Jump instructions take 12 cycles, and we need to read 2 words following the
   // PC. In theory, this should be done with a pair of INDIRECT_READs, but those
   // would only make up 8 cycles, so I'm padding the end of the state machine
   // with extra NACTs.
@@ -129,6 +129,17 @@ type CpuState =
   | "JUMP:NACT_5"
   | "JUMP:NACT_6"
   | "JUMP:NACT_7"
+  //
+  | "BRANCH_READ_OFFSET:BAR_0"
+  | "BRANCH_READ_OFFSET:NACT_0"
+  | "BRANCH_READ_OFFSET:DTB_0"
+  | "BRANCH_READ_OFFSET:NACT_1"
+  | "BRANCH_READ_OFFSET:NACT_2"
+  | "BRANCH_READ_OFFSET:NACT_3"
+  | "BRANCH_READ_OFFSET:NACT_4"
+  //
+  | "BRANCH_JUMP:NACT_0"
+  | "BRANCH_JUMP:NACT_1"
   //
   | "INDIRECT_WRITE:BAR"
   | "INDIRECT_WRITE:NACT_0"
@@ -198,7 +209,7 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   CMPR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   ANDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   XORR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  B: "INDIRECT_READ:BAR",
+  B: "BRANCH_READ_OFFSET:BAR_0",
   MVO: "INDIRECT_WRITE:BAR",
   "MVO@": "INDIRECT_WRITE:BAR",
   MVOI: "INDIRECT_WRITE:BAR",
@@ -764,6 +775,153 @@ export class CP1610 implements BusDevice {
           this.r[7] = aaaaaaaaaaaaaaaa;
         }
 
+        this.state = "FETCH_OPCODE:BAR";
+        break;
+      }
+
+      case "BRANCH_READ_OFFSET:BAR_0": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.BAR;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        // CPU asserts address of the Instruction or Data to read. Devices
+        // should latch the address at this time and perform address decoding.
+        this.bus.data = this.r[7];
+        this.r[7] += 1;
+        this.state = "BRANCH_READ_OFFSET:NACT_0";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:NACT_0": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        this.state = "BRANCH_READ_OFFSET:DTB_0";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:DTB_0": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.DTB;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        // The addressed device asserts its data on the bus. The CPU then reads
+        // this data.
+        this.args[0] = this.bus.data;
+        this.state = "BRANCH_READ_OFFSET:NACT_1";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:NACT_1": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        this.state = "BRANCH_READ_OFFSET:NACT_2";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:NACT_2": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        this.state = "BRANCH_READ_OFFSET:NACT_3";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:NACT_3": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        this.state = "BRANCH_READ_OFFSET:NACT_4";
+        break;
+      }
+      case "BRANCH_READ_OFFSET:NACT_4": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.DTB;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        // The addressed device asserts its data on the bus. The CPU then reads
+        // this data.
+        this.args[1] = this.bus.data;
+        let condition = false;
+        switch (0b0000_0000_0000_0111 & this.opcode) {
+          // B / NOPP
+          case 0b000: {
+            condition = true;
+            break;
+          }
+          // BC / BNC
+          case 0b001: {
+            condition = this.c;
+            break;
+          }
+          // BOV / BNOV
+          case 0b010: {
+            condition = this.o;
+            break;
+          }
+          // BPL / BMI
+          case 0b011: {
+            condition = !this.s;
+            break;
+          }
+          // BEQ / BNEQ
+          case 0b100: {
+            condition = this.z;
+            break;
+          }
+          // BLT / BGE
+          case 0b101: {
+            condition = this.s !== this.o;
+            break;
+          }
+          // BLE / BGT
+          case 0b110: {
+            condition = this.z || (this.s !== this.o);
+            break;
+          }
+          // BUSC / BESC
+          case 0b111: {
+            condition = this.s !== this.c;
+            break;
+          }
+        }
+
+        if (0b0000_0000_0000_1000 & this.opcode) {
+          condition = !condition;
+        }
+        
+        if (condition) {
+          this.state = "BRANCH_JUMP:NACT_0";
+        } else {
+          this.state = "FETCH_OPCODE:BAR";
+        }
+        break;
+      }
+
+      case "BRANCH_JUMP:NACT_0": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        this.state = "BRANCH_JUMP:NACT_1";
+        break;
+      }
+      case "BRANCH_JUMP:NACT_1": {
+        if (this.ticks === 0) {
+          this.bus.flags = Bus.NACT;
+          return;
+        }
+        if (this.ticks !== 3) return;
+        const direction = 0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
+        this.r[7] += direction * (this.args[0] + 1);
         this.state = "FETCH_OPCODE:BAR";
         break;
       }
