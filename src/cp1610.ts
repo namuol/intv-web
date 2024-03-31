@@ -1,6 +1,8 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import instructions from "./instructions";
 
+const trace = (..._: any[]) => {};
+
 export type InstructionConfig = Readonly<{
   instruction: string;
   mnemonic: Mnemonic;
@@ -103,12 +105,48 @@ type CpuState =
   | "INDIRECT_READ:NACT_0"
   | "INDIRECT_READ:DTB"
   | "INDIRECT_READ:NACT_1"
+  //
+  | "INDIRECT_WRITE:BAR"
+  | "INDIRECT_WRITE:NACT_0"
+  | "INDIRECT_WRITE:DW"
+  | "INDIRECT_WRITE:DWS"
+  | "INDIRECT_WRITE:NACT_1"
+  //
+  | "INDIRECT_SDBD_READ:BAR"
+  | "INDIRECT_SDBD_READ:NACT_0"
+  | "INDIRECT_SDBD_READ:DTB"
+  | "INDIRECT_SDBD_READ:BAR"
+  | "INDIRECT_SDBD_READ:NACT_1"
+  | "INDIRECT_SDBD_READ:DTB"
+  //
+  | "DIRECT_READ:BAR"
+  | "DIRECT_READ:NACT_0"
+  | "DIRECT_READ:ADAR"
+  | "DIRECT_READ:NACT_1"
+  | "DIRECT_READ:DTB"
+  | "DIRECT_READ:NACT_2"
+  //
+  | "DIRECT_WRITE:BAR"
+  | "DIRECT_WRITE:NACT_0"
+  | "DIRECT_WRITE:ADAR"
+  | "DIRECT_WRITE:NACT_1"
+  | "DIRECT_WRITE:DW"
+  | "DIRECT_WRITE:DWS"
+  | "DIRECT_WRITE:NACT_2"
+  //
+  | "INTERRUPT:INTAK"
+  | "INTERRUPT:NACT_0"
+  | "INTERRUPT:DW"
+  | "INTERRUPT:DWS"
+  | "INTERRUPT:NACT_1"
+  | "INTERRUPT:IAB"
+  | "INTERRUPT:NACT_2"
   // Jump instructions take 12 cycles, and we need to read 2 words following the
   // PC. In theory, this should be done with a pair of INDIRECT_READs, but those
   // would only make up 8 cycles, so I'm padding the end of the state machine
   // with extra NACTs.
   //
-  // Note: The "JR" instruction is actually a MOV, which takes 7 cycles, as
+  // Note: The "JR" instruction is actually a MOVR, which takes 7 cycles, as
   // opposed to the typical 12 cycles taken by true JUMP instructions.
   //
   // From the Wiki docs:
@@ -139,43 +177,7 @@ type CpuState =
   | "BRANCH_READ_OFFSET:NACT_4"
   //
   | "BRANCH_JUMP:NACT_0"
-  | "BRANCH_JUMP:NACT_1"
-  //
-  | "INDIRECT_WRITE:BAR"
-  | "INDIRECT_WRITE:NACT_0"
-  | "INDIRECT_WRITE:DW"
-  | "INDIRECT_WRITE:DWS"
-  | "INDIRECT_WRITE:NACT_1"
-  //
-  | "DIRECT_READ:BAR"
-  | "DIRECT_READ:NACT_0"
-  | "DIRECT_READ:ADAR"
-  | "DIRECT_READ:NACT_1"
-  | "DIRECT_READ:DTB"
-  | "DIRECT_READ:NACT_2"
-  //
-  | "DIRECT_WRITE:BAR"
-  | "DIRECT_WRITE:NACT_0"
-  | "DIRECT_WRITE:ADAR"
-  | "DIRECT_WRITE:NACT_1"
-  | "DIRECT_WRITE:DW"
-  | "DIRECT_WRITE:DWS"
-  | "DIRECT_WRITE:NACT_2"
-  //
-  | "INDIRECT_SDBD_READ:BAR"
-  | "INDIRECT_SDBD_READ:NACT_0"
-  | "INDIRECT_SDBD_READ:DTB"
-  | "INDIRECT_SDBD_READ:BAR"
-  | "INDIRECT_SDBD_READ:NACT_1"
-  | "INDIRECT_SDBD_READ:DTB"
-  //
-  | "INTERRUPT:INTAK"
-  | "INTERRUPT:NACT_0"
-  | "INTERRUPT:DW"
-  | "INTERRUPT:DWS"
-  | "INTERRUPT:NACT_1"
-  | "INTERRUPT:IAB"
-  | "INTERRUPT:NACT_2";
+  | "BRANCH_JUMP:NACT_1";
 
 const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   HLT: "INDIRECT_READ:BAR",
@@ -210,7 +212,7 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   ANDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   XORR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
   B: "BRANCH_READ_OFFSET:BAR_0",
-  MVO: "INDIRECT_WRITE:BAR",
+  MVO: "INDIRECT_READ:BAR",
   "MVO@": "INDIRECT_WRITE:BAR",
   MVOI: "INDIRECT_WRITE:BAR",
   MVI: "INDIRECT_READ:BAR",
@@ -233,12 +235,12 @@ const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
   XORI: "INDIRECT_READ:BAR",
 };
 
-interface BusDevice {
+export interface BusDevice {
   clock(): void;
   debug_read(addr: number): null | number;
 }
 
-type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
+export type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
 type RegisterIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export class Bus {
@@ -253,7 +255,7 @@ export class Bus {
    * allowed to float, with their previous driven value fading away during this
    * phase.
    */
-  static NACT = 0b000 as const;
+  static ___ = 0b000 as const;
   /**
    * ADAR - Address Data to Address Register
    *
@@ -362,14 +364,14 @@ export class Bus {
     return this._data & 0xffff;
   }
   set data(_data: number) {
-    console.error(new Error(`bus.data = $${_data.toString(16)}`).stack);
+    trace(new Error(`bus.data = $${_data.toString(16)}`).stack);
     this._data = _data & 0xffff;
   }
 
   //
   // BUS CONTROL FLAGS
   //
-  flags: BusFlags = Bus.NACT;
+  flags: BusFlags = Bus.___;
 }
 
 /**
@@ -476,7 +478,7 @@ export class CP1610 implements BusDevice {
   state: CpuState = "RESET:IAB";
 
   clock() {
-    console.error(this.state);
+    trace(this.state);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.state) {
@@ -497,7 +499,7 @@ export class CP1610 implements BusDevice {
       }
       case "RESET:NACT": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -521,7 +523,7 @@ export class CP1610 implements BusDevice {
       }
       case "FETCH_OPCODE:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -543,7 +545,7 @@ export class CP1610 implements BusDevice {
       }
       case "FETCH_OPCODE:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -564,17 +566,14 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Instruction or Data to read. Devices
         // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[this.reg0] || 0;
-        if (this.reg0 === 6) {
-          this.r[this.reg0] -= 1;
-        }
+        this.bus.data = this.r[7];
         this.r[7] += 1;
         this.state = "INDIRECT_READ:NACT_0";
         break;
       }
       case "INDIRECT_READ:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -597,7 +596,7 @@ export class CP1610 implements BusDevice {
       }
       case "INDIRECT_READ:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -623,7 +622,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -644,7 +643,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -666,7 +665,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_2": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -687,7 +686,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_3": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -696,7 +695,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_4": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -705,7 +704,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_5": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -714,7 +713,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_6": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -723,7 +722,7 @@ export class CP1610 implements BusDevice {
       }
       case "JUMP:NACT_7": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -794,7 +793,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_READ_OFFSET:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -815,7 +814,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_READ_OFFSET:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -824,7 +823,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_READ_OFFSET:NACT_2": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -833,7 +832,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_READ_OFFSET:NACT_3": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -842,7 +841,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_READ_OFFSET:NACT_4": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -883,7 +882,7 @@ export class CP1610 implements BusDevice {
           }
           // BLE / BGT
           case 0b110: {
-            condition = this.z || (this.s !== this.o);
+            condition = this.z || this.s !== this.o;
             break;
           }
           // BUSC / BESC
@@ -896,7 +895,7 @@ export class CP1610 implements BusDevice {
         if (0b0000_0000_0000_1000 & this.opcode) {
           condition = !condition;
         }
-        
+
         if (condition) {
           this.state = "BRANCH_JUMP:NACT_0";
         } else {
@@ -907,7 +906,7 @@ export class CP1610 implements BusDevice {
 
       case "BRANCH_JUMP:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -916,7 +915,7 @@ export class CP1610 implements BusDevice {
       }
       case "BRANCH_JUMP:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -934,13 +933,13 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // CPU asserts address of the Data to write. Devices should latch the
         // address at this time and perform address decoding.
-        this.bus.data = this.r[this.reg0] || 0;
+        this.bus.data = this.r[this.f1] || 0;
         this.state = "INDIRECT_WRITE:NACT_0";
         break;
       }
       case "INDIRECT_WRITE:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -958,7 +957,7 @@ export class CP1610 implements BusDevice {
         // The CPU asserts the data to be written. The addressed device can
         // latch the data at this time, although it is not necessary yet, as the
         // data is stable through the next phase.
-        this.bus.data = this.r[this.reg0];
+        this.bus.data = this.r[this.f2];
         this.state = "INDIRECT_WRITE:DWS";
         break;
       }
@@ -970,13 +969,13 @@ export class CP1610 implements BusDevice {
         if (this.ticks !== 3) return;
         // The CPU continues to assert the data to be written. The addressed
         // device can latch the data at this time if it hasn't already.
-        this.bus.data = this.r[this.reg0];
+        this.bus.data = this.r[this.f2];
         this.state = "INDIRECT_WRITE:NACT_1";
         break;
       }
       case "INDIRECT_WRITE:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -987,8 +986,8 @@ export class CP1610 implements BusDevice {
         // registers), then the value in the address register will be
         // incremented by one after the value in the source register has been
         // stored at the designated address.
-        if (this.reg0 >= 4) {
-          this.r[this.reg0] += 1;
+        if (this.f1 >= 4) {
+          this.r[this.f1] += 1;
         }
         this._executeInstruction();
         break;
@@ -1009,7 +1008,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_READ:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1033,7 +1032,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_READ:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1055,7 +1054,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_READ:NACT_2": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1081,7 +1080,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_WRITE:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1105,7 +1104,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_WRITE:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1140,7 +1139,7 @@ export class CP1610 implements BusDevice {
       }
       case "DIRECT_WRITE:NACT_2": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1165,7 +1164,7 @@ export class CP1610 implements BusDevice {
       }
       case "INDIRECT_SDBD_READ:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1202,7 +1201,7 @@ export class CP1610 implements BusDevice {
       }
       case "INDIRECT_SDBD_READ:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1243,7 +1242,7 @@ export class CP1610 implements BusDevice {
       }
       case "INTERRUPT:NACT_0": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1278,7 +1277,7 @@ export class CP1610 implements BusDevice {
       }
       case "INTERRUPT:NACT_1": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1303,7 +1302,7 @@ export class CP1610 implements BusDevice {
       }
       case "INTERRUPT:NACT_2": {
         if (this.ticks === 0) {
-          this.bus.flags = Bus.NACT;
+          this.bus.flags = Bus.___;
           return;
         }
         if (this.ticks !== 3) return;
@@ -1329,7 +1328,7 @@ export class CP1610 implements BusDevice {
    * 0000:0000:00rr:r000
    * ```
    */
-  reg0: RegisterIndex = 0;
+  f1: RegisterIndex = 0;
   /**
    * Decoded from the current opcode.
    *
@@ -1339,14 +1338,20 @@ export class CP1610 implements BusDevice {
    * 0000:0000:0000:0rrr
    * ```
    */
-  reg1: RegisterIndex = 0;
+  f2: RegisterIndex = 0;
+
+  effectiveAddress: number = 0xffff;
 
   _decodeInstruction() {
     this.instruction = decodeOpcode(this.opcode);
-    this.reg0 = ((0b0000_0000_0011_1000 & this.opcode) >> 3) as RegisterIndex;
-    this.reg1 = (0b0000_0000_0000_0111 & this.opcode) as RegisterIndex;
+
+    this.f1 = ((0b0000_0000_0011_1000 & this.opcode) >> 3) as RegisterIndex;
+    this.f2 = (0b0000_0000_0000_0111 & this.opcode) as RegisterIndex;
+    const isExternalReferenceInstruction = 0b0000_0001_0000_0000 & this.opcode;
+    
+
     if (!this.instruction) {
-      console.error(
+      trace(
         `Uknown instruction opcode: $${this.opcode
           .toString(16)
           .padStart(4, "0")}`,
@@ -1493,18 +1498,27 @@ export class CP1610 implements BusDevice {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
       }
       case "XORR": {
-        const result = this.r[this.reg1] ^ this.r[this.reg0];
+        const result = this.r[this.f2] ^ this.r[this.f1];
         this.z = result === 0;
         this.s = (result & 0b1000_0000_0000_0000) !== 0;
-        this.r[this.reg1] = result;
+        this.r[this.f2] = result;
         this.state = "FETCH_OPCODE:BAR";
         return;
       }
       case "B": {
         throw new Error(`${this.instruction.mnemonic} not implemented`);
       }
+      case "MVO": {
+        // HACKish - I feel like I'm misunderstanding something about the
+        // internal mechanics of the CPU here.
+        if (this.state === "DIRECT_WRITE:NACT_2") {
+          this.state = "FETCH_OPCODE:BAR";
+        } else {
+          this.state = "DIRECT_WRITE:BAR";
+        }
+        break;
+      }
       case "MVO@":
-      case "MVO":
       case "MVOI": {
         this.state = "FETCH_OPCODE:BAR";
         return;
@@ -1512,7 +1526,7 @@ export class CP1610 implements BusDevice {
       case "MVI@":
       case "MVI":
       case "MVII": {
-        this.r[this.reg1] = this.args[0];
+        this.r[this.f2] = this.args[0];
         this.state = "FETCH_OPCODE:BAR";
         return;
       }
@@ -1616,7 +1630,7 @@ export class RAM implements BusDevice {
 
     if (addr >= 0 && addr < this.data.length) {
       this._addr = addr;
-      console.error(
+      trace(
         new Error(
           `this._addr = $${this._addr.toString(
             16,
@@ -1635,7 +1649,7 @@ export class RAM implements BusDevice {
 
     const data = this.data[this._addr];
     if (data == null) return;
-    console.error(
+    trace(
       new Error(
         `this.bus.data = $${data.toString(
           16,
@@ -1653,7 +1667,7 @@ export class RAM implements BusDevice {
   }
 
   clock(): void {
-    console.error(this.name);
+    trace(this.name);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.bus.flags) {
@@ -1727,7 +1741,7 @@ export class RAM implements BusDevice {
         // normal addressing cycle elsewhere.
         return;
       }
-      case Bus.NACT: {
+      case Bus.___: {
         // During this stage, no device is active on the bus. DB0 through DB15
         // are allowed to float, with their previous driven value fading away
         // during this phase.
