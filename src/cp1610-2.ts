@@ -63,7 +63,6 @@ const BusSequences = {
     Bus.DTB,
     Bus.___,
   ],
-  // prettier-ignore
   ADDRESS_DIRECT_WRITE: [
     Bus.BAR,
     Bus.___,
@@ -71,6 +70,20 @@ const BusSequences = {
     Bus.___,
     Bus.DW,
     Bus.DWS,
+    Bus.___,
+  ],
+  JUMP: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.___,
+    Bus.___,
+    Bus.___,
     Bus.___,
   ],
 } as const;
@@ -110,6 +123,9 @@ export class CP1610_2 implements BusDevice {
    * Used in BAR and ADAR as the address to put on the bus for read/write.
    */
   #effectiveAddress: number = 0x0000;
+
+  #jumpOperand1: null | number = null;
+  #jumpOperand2: null | number = null;
 
   /**
    * Externally-facing registers, R0-R7.
@@ -209,6 +225,12 @@ export class CP1610_2 implements BusDevice {
         if (this.#ts === 2) {
           if (this.busSequence === "INSTRUCTION_FETCH") {
             this.opcode = this.bus.data;
+          } else if (this.busSequence === "JUMP") {
+            if (this.#jumpOperand1 == null) {
+              this.#jumpOperand1 = this.bus.data;
+            } else if (this.#jumpOperand2 == null) {
+              this.#jumpOperand2 = this.bus.data;
+            }
           }
         }
         break;
@@ -245,8 +267,41 @@ export class CP1610_2 implements BusDevice {
           case "ADDRESS_INDIRECT_READ":
           case "ADDRESS_INDIRECT_WRITE":
           case "ADDRESS_DIRECT_READ":
-          case "ADDRESS_DIRECT_WRITE": {
+          case "ADDRESS_DIRECT_WRITE":
+          case "JUMP": {
             // Most sequences go straight into fetching the next instruction:
+            if (this.busSequence === "JUMP") {
+              const rr = (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
+              const ff = 0b0000_0000_0000_0011 & this.#jumpOperand1!;
+              const aaaaaaaaaaaaaaaa =
+                ((0b0000_0000_1111_1100 & this.#jumpOperand1!) << 8) |
+                (0b0000_0011_1111_1111 & this.#jumpOperand2!);
+
+              let regIndex = null;
+              switch (rr) {
+                case 0b00: {
+                  regIndex = 4;
+                  break;
+                }
+                case 0b01: {
+                  regIndex = 5;
+                  break;
+                }
+                case 0b10: {
+                  regIndex = 6;
+                  break;
+                }
+              }
+              if (regIndex != null) {
+                this.r[regIndex] = this.r[7];
+              }
+              if (ff === 0b01) this.i = true;
+              if (ff === 0b10) this.i = false;
+              this.r[7] = aaaaaaaaaaaaaaaa;
+
+              this.#jumpOperand1 = null;
+              this.#jumpOperand2 = null;
+            }
             this.busSequence = "INSTRUCTION_FETCH";
             break;
           }
@@ -274,6 +329,41 @@ export class CP1610_2 implements BusDevice {
                 case 0b111: /* XOR */ this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
               }
             } else {
+              // prettier-ignore
+              switch (this.#operation) {
+                // These indicate single-register operations, which have a
+                // secondary opcode within f1:
+                case 0b000: {
+                  switch (this.#f1) {
+                    case 0b000: {
+                      // Special case: `0000 000` indicates a jump instruction:
+                      this.busSequence = "JUMP";
+                      break;
+                    }
+                    case 0b001: break;
+                    case 0b010: break;
+                    case 0b011: break;
+                    case 0b100: break;
+                    case 0b101: break;
+                    case 0b110: break;
+                    case 0b111: break;
+                  }
+                  break;
+                }
+                // Register shift operations break down the opcode differently
+                // so we have special logic for them here:
+                case 0b001: {
+                  break;
+                }
+                // The rest of these operations are register to register
+                // operations:
+                case 0b010: /* MOVR */ break;
+                case 0b011: /* ADDR */ break;
+                case 0b100: /* SUBR */ break;
+                case 0b101: /* CMPR */ break;
+                case 0b110: /* ANDR */ break;
+                case 0b111: /* XORR */ break;
+              }
             }
             break;
           }
