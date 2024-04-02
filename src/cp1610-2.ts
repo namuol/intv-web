@@ -6,6 +6,14 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 
+let totalLogs = 0;
+const trace = (..._: any[]) => {
+  if (totalLogs < 15) {
+    console.error(..._);
+    totalLogs += 1;
+  }
+};
+
 /**
  * Each micro-cycle (m-cycle) is divided into four time slots, which the CPU and
  * other bus devices use internally to decide what to do next.
@@ -24,6 +32,10 @@ import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 type TimeSlot = 0 | 1 | 2 | 3;
 
 const BusSequences = {
+  //
+  // INITIALIZATION
+  //
+
   // prettier-ignore
   INITIALIZATION: [
     Bus.___,
@@ -32,6 +44,11 @@ const BusSequences = {
     Bus.___,
     Bus.___,
   ],
+
+  //
+  // FETCH
+  //
+
   // prettier-ignore
   INSTRUCTION_FETCH: [
     Bus.BAR,
@@ -39,6 +56,11 @@ const BusSequences = {
     Bus.DTB,
     Bus.___,
   ],
+
+  //
+  // ADDRESS
+  //
+
   // prettier-ignore
   ADDRESS_INDIRECT_READ: [
     Bus.BAR,
@@ -72,6 +94,10 @@ const BusSequences = {
     Bus.DWS,
     Bus.___,
   ],
+
+  //
+  // Special JUMP
+  //
   JUMP: [
     Bus.BAR,
     Bus.___,
@@ -195,6 +221,9 @@ export class CP1610_2 implements BusDevice {
 
   clock(): void {
     this.#ts = ((this.#ts + 1) % 4) as TimeSlot;
+    // if (this.#ts === 0) {
+    //   console.log(this.busSequence, this.busSequenceIndex);
+    // }
     const busSequence = BusSequences[this.busSequence];
     const busControl = busSequence[this.busSequenceIndex] as BusFlags;
     if (this.#ts === 0) this.bus.flags = busControl;
@@ -269,7 +298,7 @@ export class CP1610_2 implements BusDevice {
           case "ADDRESS_DIRECT_READ":
           case "ADDRESS_DIRECT_WRITE":
           case "JUMP": {
-            // Most sequences go straight into fetching the next instruction:
+            // Handle jump - TODO: verify timing of this
             if (this.busSequence === "JUMP") {
               const rr = (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
               const ff = 0b0000_0000_0000_0011 & this.#jumpOperand1!;
@@ -298,11 +327,12 @@ export class CP1610_2 implements BusDevice {
               if (ff === 0b01) this.i = true;
               if (ff === 0b10) this.i = false;
               this.r[7] = aaaaaaaaaaaaaaaa;
-
-              this.#jumpOperand1 = null;
-              this.#jumpOperand2 = null;
             }
+
+            // Most sequences go straight into fetching the next instruction:
             this.busSequence = "INSTRUCTION_FETCH";
+            this.#jumpOperand1 = null;
+            this.#jumpOperand2 = null;
             break;
           }
           case "INSTRUCTION_FETCH": {
@@ -310,10 +340,18 @@ export class CP1610_2 implements BusDevice {
             // next by looking at the opcode we just read.
 
             // prettier-ignore
-            this.#external = Boolean(0b000000_1000_000_000 & (this.opcode >> 9));
-            this.#operation = /*  */ 0b000000_0111_000_000 & (this.opcode >> 6);
-            this.#f1 = /*         */ 0b000000_0000_111_000 & (this.opcode >> 3);
-            this.#f2 = /*         */ 0b000000_0000_000_111 & (this.opcode >> 0);
+            this.#external = Boolean((0b000000_1000_000_000 & this.opcode) >> 9);
+            this.#operation = /*  */ (0b000000_0111_000_000 & this.opcode) >> 6;
+            this.#f1 = /*         */ (0b000000_0000_111_000 & this.opcode) >> 3;
+            this.#f2 = /*         */ (0b000000_0000_000_111 & this.opcode) >> 0;
+
+            trace("DECODING INSTRUCTION", {
+              opcode: this.opcode.toString(16).padStart(4, "0"),
+              external: this.#external,
+              operation: this.#operation.toString(2).padStart(3, "0"),
+              f1: this.#f1.toString(2).padStart(3, "0"),
+              f2: this.#f2.toString(2).padStart(3, "0"),
+            });
 
             if (this.#external) {
               const indirect = this.#f1 !== 0b000;

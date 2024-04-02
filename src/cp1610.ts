@@ -240,7 +240,26 @@ export interface BusDevice {
   debug_read(addr: number): null | number;
 }
 
-export type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
+export type BusFlags =
+  | 0b000
+  | 0b001
+  | 0b010
+  | 0b011
+  | 0b100
+  | 0b101
+  | 0b110
+  | 0b111;
+
+const BUS_FLAG_STRINGS = [
+  "NACT",
+  "ADAR",
+  "IAB",
+  "DTB",
+  "BAR",
+  "DW",
+  "DWS",
+  "INTAK",
+] as const;
 type RegisterIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export class Bus {
@@ -354,6 +373,12 @@ export class Bus {
    * processed as a normal addressing cycle elsewhere.
    */
   static INTAK = 0b111 as const;
+
+  toString(): string {
+    return `Bus(${BUS_FLAG_STRINGS[this.flags]}:$${this._data
+      .toString(16)
+      .padStart(4, "0")})`;
+  }
 
   _data: number = 0x0000;
 
@@ -1348,7 +1373,6 @@ export class CP1610 implements BusDevice {
     this.f1 = ((0b0000_0000_0011_1000 & this.opcode) >> 3) as RegisterIndex;
     this.f2 = (0b0000_0000_0000_0111 & this.opcode) as RegisterIndex;
     const isExternalReferenceInstruction = 0b0000_0001_0000_0000 & this.opcode;
-    
 
     if (!this.instruction) {
       trace(

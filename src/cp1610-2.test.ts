@@ -2,7 +2,14 @@ import {describe, expect, test} from "vitest";
 import fs from "fs";
 import glob from "glob-promise";
 
-import {Bus, BusDevice, InstructionConfig, RAM, ROM, forTestSuite} from "./cp1610";
+import {
+  Bus,
+  BusDevice,
+  InstructionConfig,
+  RAM,
+  ROM,
+  forTestSuite,
+} from "./cp1610";
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {CP1610_2} from "./cp1610-2";
 
@@ -26,7 +33,6 @@ describe("jzIntv fixtures", async () => {
   // module.
 
   const fixtures = await glob("./src/fixtures/*.jzintv.txt");
-  console.log("fixtures", fixtures);
   for (const fixturePath of fixtures) {
     test(fixturePath, async () => {
       class BusSniffer implements BusDevice {
@@ -34,7 +40,6 @@ describe("jzIntv fixtures", async () => {
         ticks: number = 0;
         addr: number = 0xffff;
         data: number = 0xffff;
-        log: string[] = [];
         /**
          * HACK
          *
@@ -47,8 +52,11 @@ describe("jzIntv fixtures", async () => {
          * as it seems to lead to valid output.
          */
         seenReads = new Set<number>();
-        constructor(bus: Bus) {
+        onBusActivity: (logLine: string) => void;
+
+        constructor(bus: Bus, onBusActivity: (logLine: string) => void) {
           this.bus = bus;
+          this.onBusActivity = onBusActivity;
         }
 
         clock(): void {
@@ -88,11 +96,12 @@ describe("jzIntv fixtures", async () => {
                 this.data = this.bus.data;
                 if (!this.seenReads.has(this.addr)) {
                   this.seenReads.add(this.addr);
-                  this.log.push(
-                    `RD a=${$word(this.addr)} d=${word(this.data)} ${
-                      cpu.busSequence
-                    }[${cpu.busSequenceIndex}]`,
+                  this.onBusActivity(
+                    `RD a=${$word(this.addr)} d=${word(
+                      this.data,
+                    )} CP-1610 (PC = ${$word(cpu.r[7])}) t=${stepCycle}`,
                   );
+                  // console.error(log.at(-1), cpu.busSequence, cpu.busSequenceIndex, this.bus.toString())
                 }
               }
               return;
@@ -109,7 +118,7 @@ describe("jzIntv fixtures", async () => {
               // data.
               if (this.ticks === 3) {
                 this.data = this.bus.data;
-                this.log.push(
+                this.onBusActivity(
                   `WR a=${$word(this.addr)} d=${word(this.data)}  ${
                     cpu.busSequence
                   }[${cpu.busSequenceIndex}]`,
@@ -153,11 +162,11 @@ describe("jzIntv fixtures", async () => {
         }
 
         debug_read(addr: number): number | null {
-          throw new Error("Method not implemented.");
+          return null;
         }
       }
 
-      const lines = (
+      const expectedLog = (
         await fs.promises.readFile(fixturePath, {encoding: "utf-8"})
       ).split("\n");
       const romPath =
@@ -165,7 +174,8 @@ describe("jzIntv fixtures", async () => {
 
       const bus = new Bus();
       const cpu = new CP1610_2(bus);
-      const busSniffer = new BusSniffer(bus);
+      const log: string[] = [];
+      const busSniffer = new BusSniffer(bus, (busLog) => log.push(busLog));
 
       const devices = [
         cpu,
@@ -182,12 +192,15 @@ describe("jzIntv fixtures", async () => {
         devices.forEach((device) => device.clock());
       };
 
+      let stepCycle = 0;
       const step = () => {
-        while (cpu.busSequence === "INSTRUCTION_FETCH" && cpu.busSequenceIndex === 0) {
+        stepCycle = Math.max(0, cycles - 12) / 4;
+        log.push(cpuStatus());
+        while (cpu.busSequence === "INSTRUCTION_FETCH") {
           tick();
         }
         // @ts-ignore
-        while (!(cpu.busSequence === "INSTRUCTION_FETCH" && cpu.busSequenceIndex === 0)) {
+        while (cpu.busSequence !== "INSTRUCTION_FETCH") {
           tick();
         }
       };
@@ -344,13 +357,10 @@ describe("jzIntv fixtures", async () => {
         const reg = (n: number) => word(n);
         return `${[...cpu.r]
           .map(reg)
-          .join(" ")} ${cpuFlags()}  ${cpuCurrentInstruction()}|${cycles / 4}`;
-      };
-
-      const busStatus = (): string => {
-        const [lastLog] = busSniffer.log.splice(0, 1);
-        if (lastLog == null) return "BUS INACTIVE";
-        return lastLog;
+          .join(" ")} ${cpuFlags()}  ${cpuCurrentInstruction()}|${
+          // HACKish cycle count offset
+          stepCycle
+        }`;
       };
 
       const normalizeCpuStatus = (line: string) =>
@@ -358,11 +368,14 @@ describe("jzIntv fixtures", async () => {
           .replace(/  +/g, "|")
           // TODO: Do we want to try and match cycle count of jzIntv?
           .split("|")
-          .slice(0, -1)
+          // .slice(0, -1)
           .join(",");
 
-      const normalizeBusStatus = (line: string) =>
-        line.split(" ").slice(0, 3).join(" ");
+      const normalizeBusStatus = (line: string) => {
+        const s = line.split(/ +/g);
+        return `${s[0]} ${s[1]} ${s[2]} ${s[7]}`;
+      };
+
       const normalizeLine = (line: string) => {
         if (line.startsWith("RD") || line.startsWith("WR")) {
           return normalizeBusStatus(line);
@@ -370,40 +383,29 @@ describe("jzIntv fixtures", async () => {
           return normalizeCpuStatus(line);
         }
       };
+
       // Hackish: Allow reset sequence to do its thing
       step();
 
       // Reset cycle count after reset:
       cycles = 0;
+      log.length = 0;
 
-      expect(lines.length).toBeGreaterThan(0);
-      let prevLines: string[] = [];
-      for (let lineNumber = 0; lineNumber < lines.length; ++lineNumber) {
-        // First account for any bus activity:
-        for (const busLogLine of busSniffer.log) {
-          console.log(busLogLine);
-          const line_ = lines[lineNumber]!;
-          const prefix = `${(lineNumber + 1).toString(10).padStart(4, " ")}: `;
-          const line = prefix + normalizeLine(line_);
-          const prev = prevLines.slice(-20).join("\n");
-          expect(
-            (prev ? prev + "\n" : "") + prefix + normalizeBusStatus(busLogLine),
-          ).toEqual((prev ? prev + "\n" : "") + line);
-          prevLines.push(line);
-          lineNumber += 1;
-        }
-        // Reset bus activity log
-        busSniffer.log.length = 0;
+      expect(expectedLog.length).toBeGreaterThan(0);
 
-        const line_ = lines[lineNumber]!;
-        const prefix = `${(lineNumber + 1).toString(10).padStart(4, " ")}: `;
-        const line = prefix + normalizeCpuStatus(line_);
-        const prev = prevLines.slice(-20).join("\n");
-        expect(
-          (prev ? prev + "\n" : "") + prefix + normalizeCpuStatus(cpuStatus()),
-        ).toEqual((prev ? prev + "\n" : "") + line);
+      while (log.length < expectedLog.length) {
         step();
-        prevLines.push(line);
+      }
+
+      const normalizedLog = log.map(normalizeLine);
+      const normalizedExpectedLog = expectedLog.map(normalizeLine);
+      for (let i = 0; i < normalizedLog.length; ++i) {
+        const prefixLine = (line: string, j: number) =>
+          `${(j + 1).toString(10).padStart(4, " ")}: ` + line;
+
+        expect(normalizedLog.slice(0, i).map(prefixLine).join("\n")).toEqual(
+          normalizedExpectedLog.slice(0, i).map(prefixLine).join("\n"),
+        );
       }
     });
   }
