@@ -647,7 +647,7 @@ export class CP1610_2 implements BusDevice {
                   throw new UnreachableCaseError(this.#operation);
                 }
               }
-              if (indirect && this.#operation !== 0b000) {
+              if (indirect && this.#operation !== B) {
                 this.#effectiveAddress = this.r[this.#f1];
                 if (this.#f1 >= 4) {
                   this.r[this.#f1] += 1;
