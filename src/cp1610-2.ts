@@ -649,6 +649,9 @@ export class CP1610_2 implements BusDevice {
               }
               if (indirect && this.#operation !== B) {
                 this.#effectiveAddress = this.r[this.#f1];
+
+                // If our destination register is R4-R7, increment its value now
+                // that we've stored the effective address.
                 if (this.#f1 >= 4) {
                   this.r[this.#f1] += 1;
                 }
