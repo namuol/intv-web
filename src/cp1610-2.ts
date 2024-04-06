@@ -122,8 +122,27 @@ const BusSequences = {
     Bus.___,
   ],
 
+  //
+  // Special BRANCH
+  //
   // prettier-ignore
-  NACT_2: [
+  BRANCH_SKIP: [
+    Bus.___, 
+    Bus.___, 
+    Bus.___
+  ],
+
+  // prettier-ignore
+  BRANCH_JUMP: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.___
+  ],
+
+  // prettier-ignore
+  EXEC_NACT_2: [
     Bus.___,
     Bus.___
   ],
@@ -281,6 +300,7 @@ export class CP1610_2 implements BusDevice {
             case "ADDRESS_DIRECT_READ":
             case "ADDRESS_DIRECT_WRITE":
             case "JUMP":
+            case "BRANCH_JUMP":
             case "INSTRUCTION_FETCH": {
               addr = this.r[7];
               this.r[7] += 1;
@@ -291,7 +311,8 @@ export class CP1610_2 implements BusDevice {
               addr = this.#effectiveAddress;
               break;
             }
-            case "NACT_2": {
+            case "BRANCH_SKIP":
+            case "EXEC_NACT_2": {
               addr = 0xaaaa;
               break;
             }
@@ -311,16 +332,33 @@ export class CP1610_2 implements BusDevice {
       }
       case Bus.DTB: {
         if (this.#ts === 2) {
-          if (this.busSequence === "INSTRUCTION_FETCH") {
-            this.opcode = this.bus.data;
-          } else if (this.busSequence === "JUMP") {
-            if (this.#jumpOperand1 == null) {
-              this.#jumpOperand1 = this.bus.data;
-            } else if (this.#jumpOperand2 == null) {
-              this.#jumpOperand2 = this.bus.data;
+          switch (this.busSequence) {
+            case "INSTRUCTION_FETCH": {
+              this.opcode = this.bus.data;
+              break;
             }
-          } else {
-            this.#dtbData = this.bus.data;
+            case "JUMP": {
+              if (this.#jumpOperand1 == null) {
+                this.#jumpOperand1 = this.bus.data;
+              } else if (this.#jumpOperand2 == null) {
+                this.#jumpOperand2 = this.bus.data;
+              }
+              break;
+            }
+            case "INITIALIZATION":
+            case "ADDRESS_DIRECT_READ":
+            case "ADDRESS_DIRECT_WRITE":
+            case "ADDRESS_INDIRECT_READ":
+            case "ADDRESS_INDIRECT_WRITE":
+            case "BRANCH_SKIP":
+            case "BRANCH_JUMP":
+            case "EXEC_NACT_2": {
+              this.#dtbData = this.bus.data;
+              break;
+            }
+            default: {
+              throw new UnreachableCaseError(this.busSequence);
+            }
           }
         }
         break;
@@ -356,12 +394,14 @@ export class CP1610_2 implements BusDevice {
             this.busSequence = "INSTRUCTION_FETCH";
             break;
           }
-          case "NACT_2":
+          case "EXEC_NACT_2":
           case "ADDRESS_INDIRECT_READ":
           case "ADDRESS_INDIRECT_WRITE":
           case "ADDRESS_DIRECT_READ":
           case "ADDRESS_DIRECT_WRITE":
-          case "JUMP": {
+          case "JUMP":
+          case "BRANCH_SKIP":
+          case "BRANCH_JUMP": {
             //
             // EXECUTE INSTRUCTION
             //
@@ -380,6 +420,9 @@ export class CP1610_2 implements BusDevice {
             if (this.#external) {
               switch (this.#operation) {
                 case B: {
+                  const direction =
+                    0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
+                  this.r[7] += direction * (this.#dtbData + 1);
                   break;
                 }
                 case MVO: {
@@ -450,13 +493,25 @@ export class CP1610_2 implements BusDevice {
                       break;
                     }
 
-                    case 0b001: break;
-                    case 0b010: break;
-                    case 0b011: break;
-                    case 0b100: break;
-                    case 0b101: break;
-                    case 0b110: break;
-                    case 0b111: break;
+                    case 0b001: /* INCR */ {
+                      const i = this.#f2;
+                      this.r[i] += 1;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b010: /* DECR */ {
+                      const i = this.#f2;
+                      this.r[i] -= 1;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b011: /* COMR */ break;
+                    case 0b100: /* NEGR */ break;
+                    case 0b101: /* ADCR */ break;
+                    case 0b110: /* GSWD */ break;
+                    case 0b111: /* RSWD */ break;
                     default: {
                       throw new UnreachableCaseError(this.#f1);
                     }
@@ -506,7 +561,7 @@ export class CP1610_2 implements BusDevice {
 
             // prettier-ignore
             {
-              this.#external = Boolean((0b000000_1000_000_000 & this.opcode) >> 9);
+              this.#external = Boolean((0b000000_1000_000_000 & this.opcode));
               this.#operation = /* */ ((0b000000_0111_000_000 & this.opcode) >> 6) as Triplet;
               this.#f1 = /*        */ ((0b000000_0000_111_000 & this.opcode) >> 3) as Triplet;
               this.#f2 = /*        */ ((0b000000_0000_000_111 & this.opcode) >> 0) as Triplet;
@@ -514,21 +569,85 @@ export class CP1610_2 implements BusDevice {
 
             if (this.#external) {
               const indirect = this.#f1 !== 0b000;
-              // prettier-ignore
               switch (this.#operation) {
-                case B: /*this.busSequence = "BRANCH";*/ break;
-                case MVO: this.busSequence = indirect ? "ADDRESS_INDIRECT_WRITE"  : "ADDRESS_DIRECT_WRITE"; break;
-                case MVI: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
-                case ADD: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
-                case SUB: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
-                case CMP: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
-                case AND: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
-                case XOR: this.busSequence = indirect ? "ADDRESS_INDIRECT_READ"   : "ADDRESS_DIRECT_READ";  break;
+                case B: {
+                  let condition = false;
+                  switch (this.#f2) {
+                    // B / NOPP
+                    case 0b000: {
+                      condition = true;
+                      break;
+                    }
+                    // BC / BNC
+                    case 0b001: {
+                      condition = this.c;
+                      break;
+                    }
+                    // BOV / BNOV
+                    case 0b010: {
+                      condition = this.o;
+                      break;
+                    }
+                    // BPL / BMI
+                    case 0b011: {
+                      condition = !this.s;
+                      break;
+                    }
+                    // BEQ / BNEQ
+                    case 0b100: {
+                      condition = this.z;
+                      break;
+                    }
+                    // BLT / BGE
+                    case 0b101: {
+                      condition = this.s !== this.o;
+                      break;
+                    }
+                    // BLE / BGT
+                    case 0b110: {
+                      condition = this.z || this.s !== this.o;
+                      break;
+                    }
+                    // BUSC / BESC
+                    case 0b111: {
+                      condition = this.s !== this.c;
+                      break;
+                    }
+                  }
+
+                  if (0b0000_0000_0000_1000 & this.opcode) {
+                    condition = !condition;
+                  }
+
+                  if (condition) {
+                    this.busSequence = "BRANCH_JUMP";
+                  } else {
+                    this.busSequence = "BRANCH_SKIP";
+                  }
+                  break;
+                }
+                case MVO: {
+                  this.busSequence = indirect
+                    ? "ADDRESS_INDIRECT_WRITE"
+                    : "ADDRESS_DIRECT_WRITE";
+                  break;
+                }
+                case MVI:
+                case ADD:
+                case SUB:
+                case CMP:
+                case AND:
+                case XOR: {
+                  this.busSequence = indirect
+                    ? "ADDRESS_INDIRECT_READ"
+                    : "ADDRESS_DIRECT_READ";
+                  break;
+                }
                 default: {
                   throw new UnreachableCaseError(this.#operation);
                 }
               }
-              if (indirect) {
+              if (indirect && this.#operation !== 0b000) {
                 this.#effectiveAddress = this.r[this.#f1];
                 if (this.#f1 >= 4) {
                   this.r[this.#f1] += 1;
@@ -546,13 +665,16 @@ export class CP1610_2 implements BusDevice {
                       this.busSequence = "JUMP";
                       break;
                     }
-                    case 0b001: break;
-                    case 0b010: break;
-                    case 0b011: break;
-                    case 0b100: break;
-                    case 0b101: break;
-                    case 0b110: break;
-                    case 0b111: break;
+                    case 0b001: /* INCR */ break;
+                    case 0b010: /* DECR */ {
+                      this.busSequence = "EXEC_NACT_2";
+                      break;
+                    }
+                    case 0b011: /* COMR */ break;
+                    case 0b100: /* NEGR */ break;
+                    case 0b101: /* ADCR */ break;
+                    case 0b110: /* GSWD */ break;
+                    case 0b111: /* RSWD */ break;
                     default: {
                       throw new UnreachableCaseError(this.#f1);
                     }
@@ -577,7 +699,7 @@ export class CP1610_2 implements BusDevice {
                   //
                   // TODO: MOVR can take an extra cycle if the destination
                   // register is 6 or 7
-                  this.busSequence = "NACT_2";
+                  this.busSequence = "EXEC_NACT_2";
                   break;
                 }
                 default: {
