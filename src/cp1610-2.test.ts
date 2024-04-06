@@ -85,7 +85,18 @@ describe("jzIntv fixtures", async () => {
               // The CPU asserts nothing during this phase -- rather, it expects the
               // currently addressed device to inform the rest of the machine of the
               // address for the next access.
-              if (this.ticks === 3) this.addr = this.bus.data;
+              if (this.ticks === 3) {
+                if (!this.seenReads.has(this.addr)) {
+                  this.seenReads.add(this.addr);
+                  this.onBusActivity(
+                    `RD a=${$word(this.addr)} d=${word(
+                      this.bus.data,
+                    )} CP-1610 (PC = ${$word(cpu.r[7])}) t=${stepCycle}`,
+                  );
+                  // console.error(log.at(-1), cpu.busSequence, cpu.busSequenceIndex, this.bus.toString())
+                }
+                this.addr = this.bus.data;
+              }
               return;
             }
             case Bus.DTB: {
