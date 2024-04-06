@@ -657,23 +657,29 @@ export class CP1610_2 implements BusDevice {
                   case 1:
                   case 2:
                   case 3: {
+                    // Destination register R1-R3, no post-increment
                     this.#effectiveAddress = this.r[this.#f1];
                     break;
                   }
                   case 4:
                   case 5:
                   case 7: {
+                    // Destination register R4, R5, or R7, post-increment
                     this.#effectiveAddress = this.r[this.#f1];
                     this.r[this.#f1] += 1;
                     break;
                   }
                   case 6: {
+                    // Stack mode
+
+                    // If input operation, pre-decrement R6
                     if (this.#operation === MVI) {
                       this.r[this.#f1] -= 1;
                     }
                     
                     this.#effectiveAddress = this.r[this.#f1];
                     
+                    // If output operation, post-increment R6
                     if (this.#operation === MVO) {
                       this.r[this.#f1] += 1;
                     }
