@@ -192,17 +192,11 @@ describe("jzIntv fixtures", async () => {
         devices.forEach((device) => device.clock());
       };
 
-      let instruction: InstructionConfig | null = null;
-      let prevInstruction: InstructionConfig | null = null;
-
       let stepCycle = 0;
       const step = () => {
         stepCycle = Math.max(0, cycles) / 4;
         log.push(cpuStatus());
-        const pc = cpu.r[7];
-        const opcode = peekBus(pc);
-        prevInstruction = instruction;
-        instruction = decodeOpcode(opcode);
+
         while (cpu.busSequence === "INSTRUCTION_FETCH") {
           tick();
         }
@@ -220,8 +214,10 @@ describe("jzIntv fixtures", async () => {
         return 0xffff;
       };
 
-      const cpuFlags = () =>
-        [
+      const cpuFlags = () => {
+        let prevInstruction = cycles / 4 > 13 ? decodeOpcode(cpu.opcode) : null;
+
+        return [
           cpu.s ? "S" : "-",
           cpu.z ? "Z" : "-",
           cpu.o ? "O" : "-",
@@ -231,6 +227,7 @@ describe("jzIntv fixtures", async () => {
           prevInstruction?.interruptable ? "i" : "-",
           "-", // TODO: interrupt state info
         ].join("");
+      };
 
       const cpuCurrentInstruction = () => {
         const pc = cpu.r[7];
@@ -379,7 +376,7 @@ describe("jzIntv fixtures", async () => {
 
       const normalizeBusStatus = (line: string) => {
         const s = line.split(/ +/g);
-        
+
         return `${s[0]} ${s[1]} ${s[2]} ${s[7]}`;
       };
 
