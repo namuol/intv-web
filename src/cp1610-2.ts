@@ -8,7 +8,7 @@ import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 
 let totalLogs = 0;
 const trace = (..._: any[]) => {
-  if (totalLogs < 15) {
+  if (totalLogs < 30) {
     console.error(..._);
     totalLogs += 1;
   }
@@ -120,6 +120,12 @@ const BusSequences = {
     Bus.DTB,
     Bus.___,
     Bus.___,
+  ],
+
+  // prettier-ignore
+  NACT_2: [
+    Bus.___,
+    Bus.___
   ],
 } as const;
 
@@ -285,6 +291,10 @@ export class CP1610_2 implements BusDevice {
               addr = this.#effectiveAddress;
               break;
             }
+            case "NACT_2": {
+              addr = 0xaaaa;
+              break;
+            }
             default: {
               throw new UnreachableCaseError(this.busSequence);
             }
@@ -346,11 +356,27 @@ export class CP1610_2 implements BusDevice {
             this.busSequence = "INSTRUCTION_FETCH";
             break;
           }
+          case "NACT_2":
           case "ADDRESS_INDIRECT_READ":
           case "ADDRESS_INDIRECT_WRITE":
           case "ADDRESS_DIRECT_READ":
           case "ADDRESS_DIRECT_WRITE":
           case "JUMP": {
+            //
+            // EXECUTE INSTRUCTION
+            //
+
+            trace("EXECUTING INSTRUCTION", {
+              opcode: this.opcode.toString(16).padStart(4, "0"),
+              external: this.#external,
+              operation: this.#operation.toString(2).padStart(3, "0"),
+              f1: this.#f1.toString(2).padStart(3, "0"),
+              f2: this.#f2.toString(2).padStart(3, "0"),
+              effectiveAddress: this.#effectiveAddress
+                .toString(16)
+                .padStart(4, "0"),
+            });
+
             if (this.#external) {
               switch (this.#operation) {
                 case B: {
@@ -448,8 +474,20 @@ export class CP1610_2 implements BusDevice {
                 case 0b011: /* ADDR */ break;
                 case 0b100: /* SUBR */ break;
                 case 0b101: /* CMPR */ break;
-                case 0b110: /* ANDR */ break;
-                case 0b111: /* XORR */ break;
+                case 0b110: /* ANDR */ {
+                  const i = this.#f2;
+                  this.r[i] &= this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                };
+                case 0b111: /* XORR */ {
+                  const i = this.#f2;
+                  this.r[i] ^= this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
                 default: {
                   throw new UnreachableCaseError(this.#operation);
                 }
@@ -528,12 +566,20 @@ export class CP1610_2 implements BusDevice {
                 }
                 // The rest of these operations are register to register
                 // operations:
-                case 0b010: /* MOVR */ break;
-                case 0b011: /* ADDR */ break;
-                case 0b100: /* SUBR */ break;
-                case 0b101: /* CMPR */ break;
-                case 0b110: /* ANDR */ break;
-                case 0b111: /* XORR */ break;
+                case 0b010: /* MOVR */
+                case 0b011: /* ADDR */
+                case 0b100: /* SUBR */
+                case 0b101: /* CMPR */
+                case 0b110: /* ANDR */
+                case 0b111: /* XORR */ {
+                  // Register-to-register operations tend to take ~6 cycles, so
+                  // 4 for instruction fetch + 2
+                  //
+                  // TODO: MOVR can take an extra cycle if the destination
+                  // register is 6 or 7
+                  this.busSequence = "NACT_2";
+                  break;
+                }
                 default: {
                   throw new UnreachableCaseError(this.#operation);
                 }
@@ -546,7 +592,9 @@ export class CP1610_2 implements BusDevice {
               operation: this.#operation.toString(2).padStart(3, "0"),
               f1: this.#f1.toString(2).padStart(3, "0"),
               f2: this.#f2.toString(2).padStart(3, "0"),
-              effectiveAddress: this.#effectiveAddress.toString(16).padStart(4, "0"),
+              effectiveAddress: this.#effectiveAddress
+                .toString(16)
+                .padStart(4, "0"),
             });
             break;
           }
