@@ -420,9 +420,13 @@ export class CP1610_2 implements BusDevice {
             if (this.#external) {
               switch (this.#operation) {
                 case B: {
-                  const direction =
-                    0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
-                  this.r[7] += direction * (this.#dtbData + 1);
+                  if (this.busSequence === "BRANCH_JUMP") {
+                    const direction =
+                      0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
+                    this.r[7] += direction * (this.#dtbData + 1);
+                  } else {
+                    this.r[7] += 1;
+                  }
                   break;
                 }
                 case MVO: {
@@ -647,13 +651,33 @@ export class CP1610_2 implements BusDevice {
                   throw new UnreachableCaseError(this.#operation);
                 }
               }
-              if (indirect && this.#operation !== B) {
-                this.#effectiveAddress = this.r[this.#f1];
 
-                // If our destination register is R4-R7, increment its value now
-                // that we've stored the effective address.
-                if (this.#f1 >= 4) {
-                  this.r[this.#f1] += 1;
+              if (this.#operation !== B) {
+                switch (this.#f1) {
+                  case 1:
+                  case 2:
+                  case 3: {
+                    this.#effectiveAddress = this.r[this.#f1];
+                    break;
+                  }
+                  case 4:
+                  case 5:
+                  case 7: {
+                    this.#effectiveAddress = this.r[this.#f1];
+                    this.r[this.#f1] += 1;
+                    break;
+                  }
+                  case 6: {
+                    if (this.#operation === MVI) {
+                      this.r[this.#f1] -= 1;
+                    }
+                    
+                    this.#effectiveAddress = this.r[this.#f1];
+                    
+                    if (this.#operation === MVO) {
+                      this.r[this.#f1] += 1;
+                    }
+                  }
                 }
               }
             } else {
