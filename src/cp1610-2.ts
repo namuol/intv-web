@@ -8,7 +8,7 @@ import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 
 let totalLogs = 0;
 const trace = (..._: any[]) => {
-  if (totalLogs < 60) {
+  if (totalLogs < 15) {
     console.error(..._);
     totalLogs += 1;
   }
@@ -78,9 +78,6 @@ const BusSequences = {
     Bus.BAR,
     Bus.___,
     Bus.DTB,
-    Bus.___,
-
-    // HACK: Extra cycle to match cycle timing of jzIntv
     Bus.___,
   ],
   // prettier-ignore
@@ -245,16 +242,14 @@ export class CP1610_2 implements BusDevice {
 
   clock(): void {
     this.#ts = ((this.#ts + 1) % 4) as TimeSlot;
-    // if (this.#ts === 0) {
-    //   console.log(this.busSequence, this.busSequenceIndex);
-    // }
+
     const busSequence = BusSequences[this.busSequence];
     const busControl = busSequence[this.busSequenceIndex] as BusFlags;
     if (this.#ts === 0) {
       this.bus.flags = busControl;
-      trace(
-        `${this.busSequence}[${this.busSequenceIndex}]:${BUS_FLAG_STRINGS[busControl]}`,
-      );
+      // trace(
+      //   `${this.busSequence}[${this.busSequenceIndex}]:${BUS_FLAG_STRINGS[busControl]}`,
+      // );
     }
 
     switch (busControl) {
