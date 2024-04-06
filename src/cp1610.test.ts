@@ -357,7 +357,7 @@ describe("jzIntv fixtures", async () => {
           cpu.c ? "C" : "-",
           cpu.i ? "I" : "-",
           cpu.d ? "D" : "-",
-          cpu.prevInstruction?.interruptible ? "i" : "-",
+          cpu.prevInstruction?.interruptable ? "i" : "-",
           "-", // TODO: interrupt state info
         ].join("");
 

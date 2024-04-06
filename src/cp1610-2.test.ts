@@ -119,9 +119,9 @@ describe("jzIntv fixtures", async () => {
               if (this.ticks === 3) {
                 this.data = this.bus.data;
                 this.onBusActivity(
-                  `WR a=${$word(this.addr)} d=${word(this.data)}  ${
-                    cpu.busSequence
-                  }[${cpu.busSequenceIndex}]`,
+                  `WR a=${$word(this.addr)} d=${word(
+                    this.data,
+                  )} CP-1610 (PC = ${$word(cpu.r[7])}) t=${stepCycle}`,
                 );
               }
               return;
@@ -192,10 +192,17 @@ describe("jzIntv fixtures", async () => {
         devices.forEach((device) => device.clock());
       };
 
+      let instruction: InstructionConfig | null = null;
+      let prevInstruction: InstructionConfig | null = null;
+
       let stepCycle = 0;
       const step = () => {
-        stepCycle = Math.max(0, cycles - 12) / 4;
+        stepCycle = Math.max(0, cycles) / 4;
         log.push(cpuStatus());
+        const pc = cpu.r[7];
+        const opcode = peekBus(pc);
+        prevInstruction = instruction;
+        instruction = decodeOpcode(opcode);
         while (cpu.busSequence === "INSTRUCTION_FETCH") {
           tick();
         }
@@ -213,8 +220,6 @@ describe("jzIntv fixtures", async () => {
         return 0xffff;
       };
 
-      let prevInstruction: InstructionConfig | null = null;
-
       const cpuFlags = () =>
         [
           cpu.s ? "S" : "-",
@@ -223,7 +228,7 @@ describe("jzIntv fixtures", async () => {
           cpu.c ? "C" : "-",
           cpu.i ? "I" : "-",
           cpu.d ? "D" : "-",
-          prevInstruction?.interruptible ? "i" : "-",
+          prevInstruction?.interruptable ? "i" : "-",
           "-", // TODO: interrupt state info
         ].join("");
 
@@ -366,13 +371,15 @@ describe("jzIntv fixtures", async () => {
       const normalizeCpuStatus = (line: string) =>
         line
           .replace(/  +/g, "|")
-          // TODO: Do we want to try and match cycle count of jzIntv?
           .split("|")
+          // TODO: It's unclear "when" CPU status is logged in jzIntv so I'm
+          // disabling timing comparisons, for now.
           // .slice(0, -1)
           .join(",");
 
       const normalizeBusStatus = (line: string) => {
         const s = line.split(/ +/g);
+        
         return `${s[0]} ${s[1]} ${s[2]} ${s[7]}`;
       };
 

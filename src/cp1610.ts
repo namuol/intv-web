@@ -7,7 +7,7 @@ export type InstructionConfig = Readonly<{
   instruction: string;
   mnemonic: Mnemonic;
   cycles: ReadonlyArray<number>;
-  interruptible: boolean;
+  interruptable: boolean;
   in_s?: boolean;
   in_z?: boolean;
   in_o?: boolean;
