@@ -1,392 +1,228 @@
+/**
+ * Implementation approach for CP-1610, based on official CP-1600 documentation
+ * from 1975 as well as community docs.
+ */
+
 import {UnreachableCaseError} from "./UnreachableCaseError";
-import instructions from "./instructions";
+import {Bus, BusFlags, BusDevice} from "./Bus";
 
-const trace = (..._: any[]) => {};
-
-export type InstructionConfig = Readonly<{
-  instruction: string;
-  mnemonic: Mnemonic;
-  cycles: ReadonlyArray<number>;
-  interruptible: boolean;
-  in_s?: boolean;
-  in_z?: boolean;
-  in_o?: boolean;
-  in_c?: boolean;
-  in_d?: boolean;
-  out_s?: boolean;
-  out_z?: boolean;
-  out_o?: boolean;
-  out_c?: boolean;
-  out_i?: boolean;
-  out_d?: boolean;
-}>;
-
-export type Mnemonic =
-  | "HLT"
-  | "SDBD"
-  | "EIS"
-  | "DIS"
-  | "J"
-  | "TCI"
-  | "CLRC"
-  | "SETC"
-  | "INCR"
-  | "DECR"
-  | "COMR"
-  | "NEGR"
-  | "ADCR"
-  | "GSWD"
-  | "NOP"
-  | "SIN"
-  | "RSWD"
-  | "SWAP"
-  | "SLL"
-  | "RLC"
-  | "SLLC"
-  | "SLR"
-  | "SAR"
-  | "RRC"
-  | "SARC"
-  | "MOVR"
-  | "ADDR"
-  | "SUBR"
-  | "CMPR"
-  | "ANDR"
-  | "XORR"
-  | "B"
-  | "MVO"
-  | "MVO@"
-  | "MVOI"
-  | "MVI"
-  | "MVI@"
-  | "MVII"
-  | "ADD"
-  | "ADD@"
-  | "ADDI"
-  | "SUB"
-  | "SUB@"
-  | "SUBI"
-  | "CMP"
-  | "CMP@"
-  | "CMPI"
-  | "AND"
-  | "AND@"
-  | "ANDI"
-  | "XOR"
-  | "XOR@"
-  | "XORI";
+// let totalLogs = 0;
+// const trace = (..._: any[]) => {
+//   if (totalLogs < 59) {
+//     console.error(..._);
+//     totalLogs += 1;
+//   }
+// };
 
 /**
- * Internal state of the CPU. This is essentially half of a state machine; the
- * rest of the state machine implementation lives in the `cycle` method of the
- * CPU.
+ * Each micro-cycle (m-cycle) is divided into four time slots, which the CPU and
+ * other bus devices use internally to decide what to do next.
  *
- * The state is primarily used to control interactions with the bus.
+ * Example: The CP1610 will control the state of the bus by switching its Bus
+ * Control flags on the trailing edge of the first Time Slot `ts = 0`, so bus
+ * devices should only read the Bus Control flags on time slots 1,2,3.
  *
- * For comprehensive documentation on this key part of the CPU, I highly
- * recommend reading Spatula City's
- * [guide](http://spatula-city.org/~im14u2c/intv/tech/master.html).
+ * The data on the bus will be valid for reading depending on the current Bus
+ * Control flags and the current Time Slot.
  *
- * A (simplified and somewhat incomplete) graphical representation of the state
- * machine can be viewed
- * [here](http://spatula-city.org/~im14u2c/intv/tech/state_flow_diag.html).
+ * Example: When the Bus Control flags are set to BAR (Bus to Address Register),
+ * the CPU will assert the address it's reading to the bus on `ts = 3`, so Bus
+ * Devices should read the address at this time.
  */
-type CpuState =
-  | "RESET:IAB"
-  | "RESET:NACT"
-  //
-  | "FETCH_OPCODE:BAR"
-  | "FETCH_OPCODE:NACT_0"
-  | "FETCH_OPCODE:DTB"
-  | "FETCH_OPCODE:NACT_1"
-  // AKA immediate mode when 000 is specified for the register to read an
-  // address from:
-  | "INDIRECT_READ:BAR"
-  | "INDIRECT_READ:NACT_0"
-  | "INDIRECT_READ:DTB"
-  | "INDIRECT_READ:NACT_1"
-  //
-  | "INDIRECT_WRITE:BAR"
-  | "INDIRECT_WRITE:NACT_0"
-  | "INDIRECT_WRITE:DW"
-  | "INDIRECT_WRITE:DWS"
-  | "INDIRECT_WRITE:NACT_1"
-  //
-  | "INDIRECT_SDBD_READ:BAR"
-  | "INDIRECT_SDBD_READ:NACT_0"
-  | "INDIRECT_SDBD_READ:DTB"
-  | "INDIRECT_SDBD_READ:BAR"
-  | "INDIRECT_SDBD_READ:NACT_1"
-  | "INDIRECT_SDBD_READ:DTB"
-  //
-  | "DIRECT_READ:BAR"
-  | "DIRECT_READ:NACT_0"
-  | "DIRECT_READ:ADAR"
-  | "DIRECT_READ:NACT_1"
-  | "DIRECT_READ:DTB"
-  | "DIRECT_READ:NACT_2"
-  //
-  | "DIRECT_WRITE:BAR"
-  | "DIRECT_WRITE:NACT_0"
-  | "DIRECT_WRITE:ADAR"
-  | "DIRECT_WRITE:NACT_1"
-  | "DIRECT_WRITE:DW"
-  | "DIRECT_WRITE:DWS"
-  | "DIRECT_WRITE:NACT_2"
-  //
-  | "INTERRUPT:INTAK"
-  | "INTERRUPT:NACT_0"
-  | "INTERRUPT:DW"
-  | "INTERRUPT:DWS"
-  | "INTERRUPT:NACT_1"
-  | "INTERRUPT:IAB"
-  | "INTERRUPT:NACT_2"
-  // Jump instructions take 12 cycles, and we need to read 2 words following the
-  // PC. In theory, this should be done with a pair of INDIRECT_READs, but those
-  // would only make up 8 cycles, so I'm padding the end of the state machine
-  // with extra NACTs.
-  //
-  // Note: The "JR" instruction is actually a MOVR, which takes 7 cycles, as
-  // opposed to the typical 12 cycles taken by true JUMP instructions.
-  //
-  // From the Wiki docs:
-  //
-  // > Move instructions are sometimes used with the program counter. "MOVR R5,
-  // > R7" will jump to the location whose address is in R5. The assembler
-  // > offers a pseudonym for this, "JR". The instruction "JR R5" is equivalent
-  // > to "MOVR R5, R7."
-  | "JUMP:BAR_0"
-  | "JUMP:NACT_0"
-  | "JUMP:DTB_0"
-  | "JUMP:NACT_1"
-  | "JUMP:BAR_1"
-  | "JUMP:NACT_2"
-  | "JUMP:DTB_1"
-  | "JUMP:NACT_3"
-  | "JUMP:NACT_4"
-  | "JUMP:NACT_5"
-  | "JUMP:NACT_6"
-  | "JUMP:NACT_7"
-  //
-  | "BRANCH_READ_OFFSET:BAR_0"
-  | "BRANCH_READ_OFFSET:NACT_0"
-  | "BRANCH_READ_OFFSET:DTB_0"
-  | "BRANCH_READ_OFFSET:NACT_1"
-  | "BRANCH_READ_OFFSET:NACT_2"
-  | "BRANCH_READ_OFFSET:NACT_3"
-  | "BRANCH_READ_OFFSET:NACT_4"
-  //
-  | "BRANCH_JUMP:NACT_0"
-  | "BRANCH_JUMP:NACT_1";
+type TimeSlot = 0 | 1 | 2 | 3;
 
-const INSTRUCTION_STATES: Record<Mnemonic, CpuState> = {
-  HLT: "INDIRECT_READ:BAR",
-  SDBD: "INDIRECT_READ:BAR",
-  EIS: "INDIRECT_READ:BAR",
-  DIS: "INDIRECT_READ:BAR",
-  J: "JUMP:BAR_0",
-  TCI: "INDIRECT_READ:BAR",
-  CLRC: "INDIRECT_READ:BAR",
-  SETC: "INDIRECT_READ:BAR",
-  INCR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  DECR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  COMR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  NEGR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  ADCR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  GSWD: "INDIRECT_READ:BAR",
-  NOP: "INDIRECT_READ:BAR",
-  SIN: "INDIRECT_READ:BAR",
-  RSWD: "INDIRECT_READ:BAR",
-  SWAP: "INDIRECT_READ:BAR",
-  SLL: "INDIRECT_READ:BAR",
-  RLC: "INDIRECT_READ:BAR",
-  SLLC: "INDIRECT_READ:BAR",
-  SLR: "INDIRECT_READ:BAR",
-  SAR: "INDIRECT_READ:BAR",
-  RRC: "INDIRECT_READ:BAR",
-  SARC: "INDIRECT_READ:BAR",
-  MOVR: "INDIRECT_READ:BAR",
-  ADDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  SUBR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  CMPR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  ANDR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  XORR: "INDIRECT_READ:NACT_1", // Do we need a state just for executing an instruction for <N> NACTs?
-  B: "BRANCH_READ_OFFSET:BAR_0",
-  MVO: "INDIRECT_READ:BAR",
-  "MVO@": "INDIRECT_WRITE:BAR",
-  MVOI: "INDIRECT_WRITE:BAR",
-  MVI: "INDIRECT_READ:BAR",
-  "MVI@": "INDIRECT_READ:BAR",
-  MVII: "INDIRECT_READ:BAR",
-  ADD: "INDIRECT_READ:BAR",
-  "ADD@": "INDIRECT_READ:BAR",
-  ADDI: "INDIRECT_READ:BAR",
-  SUB: "INDIRECT_READ:BAR",
-  "SUB@": "INDIRECT_READ:BAR",
-  SUBI: "INDIRECT_READ:BAR",
-  CMP: "INDIRECT_READ:BAR",
-  "CMP@": "INDIRECT_READ:BAR",
-  CMPI: "INDIRECT_READ:BAR",
-  AND: "INDIRECT_READ:BAR",
-  "AND@": "INDIRECT_READ:BAR",
-  ANDI: "INDIRECT_READ:BAR",
-  XOR: "INDIRECT_READ:BAR",
-  "XOR@": "INDIRECT_READ:BAR",
-  XORI: "INDIRECT_READ:BAR",
-};
+type Triplet = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-export interface BusDevice {
-  clock(): void;
-  debug_read(addr: number): null | number;
-}
+// Base external operations
+const B: 0b000 = 0b000;
+const MVO: 0b001 = 0b001;
+const MVI: 0b010 = 0b010;
+const ADD: 0b011 = 0b011;
+const SUB: 0b100 = 0b100;
+const CMP: 0b101 = 0b101;
+const AND: 0b110 = 0b110;
+const XOR: 0b111 = 0b111;
 
-export type BusFlags = 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110 | 0b111;
-type RegisterIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const SDBD_OPCODE: 0b0000_0000_0000_0001 = 0b0000_0000_0000_0001;
 
-export class Bus {
-  /**
-   * NACT - No ACTion
-   *
-   * - BDIR: 0
-   * - BC2: 0
-   * - BC1: 0
-   *
-   * During this stage, no device is active on the bus. DB0 through DB15 are
-   * allowed to float, with their previous driven value fading away during this
-   * phase.
-   */
-  static ___ = 0b000 as const;
-  /**
-   * ADAR - Address Data to Address Register
-   *
-   * - BDIR: 0
-   * - BC2: 0
-   * - BC1: 1
-   *
-   * This bus phase is issued by the CPU during a Direct Addressing Mode
-   * instruction. Prior to this phase, an address will have been latched in a
-   * device by a prior BAR or ADAR bus phase. Then, during this phase, the
-   * currently selected device responds with its data on the bus, and at the end
-   * of this phase, all devices should latch this address as the address for the
-   * next memory access (DTB, DW, or DWS phases). The CPU asserts nothing during
-   * this phase -- rather, it expects the currently addressed device to inform
-   * the rest of the machine of the address for the next access.
-   */
-  static ADAR = 0b001 as const;
-  /**
-   * IAB - Interrupt Address to Bus
-   *
-   * - BDIR: 0
-   * - BC2: 1
-   * - BC1: 0
-   *
-   * This bus phase is entered during interrupt processing, after the current
-   * program counter has been written to the stack. It's also entered into on
-   * the first cycle after coming out of RESET. During this phase, an external
-   * device should assert the address of the Interrupt or RESET vector as
-   * appropriate. The CPU then moves this address into the program counter and
-   * resumes execution.
-   */
-  static IAB = 0b010 as const;
-  /**
-   * DTB - Data To Bus
-   *
-   * - BDIR: 0
-   * - BC2: 1
-   * - BC1: 1
-   *
-   * This phase is entered during a read cycle. During this phase, the currently
-   * addressed device should assert its data on the bus. The CPU then reads this
-   * data.
-   */
-  static DTB = 0b011 as const;
-  /**
-   * BAR - Bus to Address Register
-   *
-   * - BDIR: 1
-   * - BC2: 0
-   * - BC1: 0
-   *
-   * During this phase, the CPU asserts the address for the current memory
-   * access. All devices on the bus are expected to latch this address and
-   * perform address decoding at this time.
-   */
-  static BAR = 0b100 as const;
-  /**
-   * DW - Data Write
-   *
-   * - BDIR: 1
-   * - BC2: 0
-   * - BC1: 1
-   *
-   * The DW and DWS bus phases initiate a write cycle. They always occur
-   * tofETCHher on adjacent cycles, with data remaining stable on the bus across
-   * the transition from DW to DWS. During these phases, the data being written
-   * is available for external memories to latch. The CP-1600 allows two full
-   * CPU cycles for external RAM to latch the data.
-   */
-  static DW = 0b101 as const;
-  /**
-   * DWS - Data Write Strobe
-   *
-   * - BDIR: 1
-   * - BC2: 1
-   * - BC1: 0
-   *
-   * Behaves the same as DW
-   */
-  static DWS = 0b110 as const;
-  /**
-   * INTAK - INTerrupt AcKnowledge
-   *
-   * - BDIR: 1
-   * - BC2: 1
-   * - BC1: 1
-   *
-   * The CPU enters this bus phase on the first cycle of interrupt processing.
-   * During the phase, the CPU places the current stack pointer value on the bus
-   * as it prepares to "push" the current program counter on the stack. Devices
-   * are expected to treat INTAK similarly to a BAR bus phase. Indeed, on the
-   * Intellivision Master Component, only the 16-bit System RAM sees the INTAK
-   * bus phase. It uses this bus phase to trigger a special bus-copy mode as
-   * well as for latching the current address. For all other devices in the
-   * system, INTAK is remapped to BAR by some discrete logic, and so is
-   * processed as a normal addressing cycle elsewhere.
-   */
-  static INTAK = 0b111 as const;
+const BusSequences = {
+  //
+  // INITIALIZATION
+  //
 
-  _data: number = 0x0000;
-
-  /**
-   * Current 16-bit data on the bus
-   */
-  get data(): number {
-    return this._data & 0xffff;
-  }
-  set data(_data: number) {
-    trace(new Error(`bus.data = $${_data.toString(16)}`).stack);
-    this._data = _data & 0xffff;
-  }
+  // prettier-ignore
+  INITIALIZATION: [
+    Bus.___,
+    Bus.IAB,
+    Bus.___,
+    Bus.___,
+    Bus.___,
+  ],
 
   //
-  // BUS CONTROL FLAGS
+  // FETCH
   //
-  flags: BusFlags = Bus.___;
-}
 
-/**
- * Emulation of the General Instruments CP1610 microprocessor, as used in the
- * Intellivision and Intellvision II home video game consoles.
- */
+  // prettier-ignore
+  INSTRUCTION_FETCH: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+  ],
+
+  //
+  // ADDRESS
+  //
+
+  // prettier-ignore
+  ADDRESS_INDIRECT_READ: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+  ],
+  ADDRESS_INDIRECT_READ_SDBD: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+  ],
+  // prettier-ignore
+  ADDRESS_INDIRECT_WRITE: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DW,
+    Bus.DWS,
+    Bus.___,
+  ],
+  // prettier-ignore
+  ADDRESS_DIRECT_READ: [
+    Bus.BAR,
+    Bus.___,
+    Bus.ADAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+  ],
+  ADDRESS_DIRECT_WRITE: [
+    Bus.BAR,
+    Bus.___,
+    Bus.ADAR,
+    Bus.___,
+    Bus.DW,
+    Bus.DWS,
+    Bus.___,
+  ],
+
+  //
+  // Special JUMP
+  //
+  JUMP: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.___,
+  ],
+
+  //
+  // Special BRANCH
+  //
+  // prettier-ignore
+  BRANCH_SKIP: [
+    Bus.___, 
+    Bus.___, 
+    Bus.___
+  ],
+
+  // prettier-ignore
+  BRANCH_JUMP: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.___,
+    Bus.___
+  ],
+
+  // prettier-ignore
+  EXEC_NACT_2: [
+    Bus.___,
+    Bus.___
+  ],
+  // prettier-ignore
+  EXEC_NACT_4: [
+    Bus.___,
+    Bus.___,
+    Bus.___,
+    Bus.___
+  ],
+} as const;
+
+export const BUS_FLAG_STRINGS = [
+  "NACT",
+  "ADAR",
+  "IAB",
+  "DTB",
+  "BAR",
+  "DW",
+  "DWS",
+  "INTAK",
+] as const;
+
 export class CP1610 implements BusDevice {
   static readonly RESET_VECTOR: number = 0x1000;
 
-  //
-  // REGISTERS
-  //
+  #ts: TimeSlot = 0;
+  bus: Bus;
+  busSequence: keyof typeof BusSequences;
+  busSequenceIndex: number;
 
-  // Hackish: Using tuple syntax here to keep typechecking tidy:
-  r: [number, number, number, number, number, number, number, number] =
+  /**
+   * The CP-1610's internal instruction register.
+   */
+  opcode: number = 0x0000;
+
+  /**
+   * The highest bit of the opcode (bit 9) determines whether the
+   * current instruction works with the bus. Such instructions are
+   * deemed "external". Otherwise the instruction works only with the
+   * internals of the CPU.
+   */
+  #external: boolean = false;
+
+  /**
+   * Bits 6-9 actually contain the type of operation we need to
+   * execute next.
+   */
+  #operation: Triplet = 0;
+
+  /** Field 1 of opcode */
+  #f1: Triplet = 0;
+
+  /** Field 2 of opcode */
+  #f2: Triplet = 0;
+
+  /**
+   * Used in BAR and ADAR as the address to put on the bus for read/write.
+   */
+  #effectiveAddress: number = 0x0000;
+
+  #jumpOperand1: null | number = null;
+  #jumpOperand2: null | number = null;
+  #dtbData: number = 0xaaaa;
+
+  /**
+   * Externally-facing registers, R0-R7.
+   */
+  r: // Hackish: Using tuple syntax here to keep typechecking tidy:
+  [number, number, number, number, number, number, number, number] =
     new Uint16Array(8) as any;
 
   //
@@ -440,1331 +276,610 @@ export class CP1610 implements BusDevice {
    */
   d: boolean = false;
 
-  bus: Bus;
-
-  /**
-   * The last opcode read from the program counter's location.
-   */
-  opcode: number = 0x0000;
-  /**
-   * Arguments that have been read from memory for current instruction (if
-   * applicable)
-   */
-  args: [number, number] = new Uint16Array(2) as any;
-  /**
-   * The current instruction decoded from the last read opcode.
-   */
-  instruction: null | InstructionConfig = null;
-  /**
-   * The previous instruction
-   */
-  prevInstruction: null | InstructionConfig = null;
-  ticks: number = 0;
-
   constructor(bus: Bus) {
     this.bus = bus;
-    this._reset();
-  }
+    this.bus.flags = Bus.___;
 
-  debug_read(_: number): number | null {
-    return null;
-  }
-
-  _reset() {
-    this.state = "RESET:IAB";
-    this.r[7] = CP1610.RESET_VECTOR;
-  }
-
-  state: CpuState = "RESET:IAB";
-
-  clock() {
-    trace(this.state);
-    this.ticks = (this.ticks + 1) % 4;
-
-    switch (this.state) {
-      case "RESET:IAB": {
-        if (this.ticks === 0) {
-          // this.bus.data = CP1610.RESET;
-          this.bus.flags = Bus.IAB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // Entered into on the first cycle after coming out of RESET. During
-        // this phase, an external device should assert the address of the RESET
-        // vector as appropriate. The CPU then moves this address into the
-        // program counter and resumes execution. this.r[7] = this.bus.data;
-        this.r[7] = CP1610.RESET_VECTOR;
-        this.state = "RESET:NACT";
-        break;
-      }
-      case "RESET:NACT": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // Pause for a cycle, then resume execution by fetching the next opcode
-        this.state = "FETCH_OPCODE:BAR";
-        break;
-      }
-
-      case "FETCH_OPCODE:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "FETCH_OPCODE:NACT_0";
-        break;
-      }
-      case "FETCH_OPCODE:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // Pause for a cycle
-        this.state = "FETCH_OPCODE:DTB";
-        break;
-      }
-      case "FETCH_OPCODE:DTB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.opcode = this.bus.data;
-        this.state = "FETCH_OPCODE:NACT_1";
-        break;
-      }
-      case "FETCH_OPCODE:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // Pause for a cycle
-
-        // Here, the CPU needs to determine which state to enter next based on
-        // the fetched instruction and enter the next appropriate state in the
-        // state machine.
-        this._decodeInstruction();
-        break;
-      }
-
-      case "INDIRECT_READ:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "INDIRECT_READ:NACT_0";
-        break;
-      }
-      case "INDIRECT_READ:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INDIRECT_READ:DTB";
-        break;
-      }
-      case "INDIRECT_READ:DTB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.args[0] = this.bus.data;
-        this.state = "INDIRECT_READ:NACT_1";
-        break;
-      }
-      case "INDIRECT_READ:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-
-        // The device deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this._executeInstruction();
-        break;
-      }
-
-      case "JUMP:BAR_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "JUMP:NACT_0";
-        break;
-      }
-      case "JUMP:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:DTB_0";
-        break;
-      }
-      case "JUMP:DTB_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.args[0] = this.bus.data;
-        this.state = "JUMP:NACT_1";
-        break;
-      }
-      case "JUMP:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:BAR_1";
-        break;
-      }
-      case "JUMP:BAR_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "JUMP:NACT_2";
-        break;
-      }
-      case "JUMP:NACT_2": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:DTB_1";
-        break;
-      }
-      case "JUMP:DTB_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.args[1] = this.bus.data;
-        this.state = "JUMP:NACT_3";
-        break;
-      }
-      case "JUMP:NACT_3": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:NACT_4";
-        break;
-      }
-      case "JUMP:NACT_4": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:NACT_5";
-        break;
-      }
-      case "JUMP:NACT_5": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:NACT_6";
-        break;
-      }
-      case "JUMP:NACT_6": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "JUMP:NACT_7";
-        break;
-      }
-      case "JUMP:NACT_7": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-
-        // Finally, handle the jump
-
-        // ```
-        // Format - Decle #1    Format - Decle #2    Format - Decle #3
-        // 0000:0000:0000:0100  0000:00rr:aaaa:aaff  0000:00aa:aaaa:aaaa
-        //
-        // where:
-        //
-        //     rr    indicates the register into which to store the return address
-        //           such that:
-        //               rr == 00    indicates to store return address in register R4
-        //               rr == 01    indicates register R5
-        //               rr == 10    indicates register R6
-        //               rr == 11    indicates that the CP1610 should not store the
-        //                           return address, signaling a Jump without return
-        //
-        //     ff    indicates how to affect the Interrupt (I) flag in the CP1610
-        //           such that:
-        //               ff == 00    indicates not to affect the Interrupt flag
-        //               ff == 01    indicates to set the Interrupt flag
-        //               ff == 10    indicates to clear the Interrupt flag
-        //               ff == 11    unknown opcode (behavior unknown!!)
-        //
-        //     aaaaaaaaaaaaaaaa    indicates the address to where the CP1610 should Jump
-        // ```
-
-        // prettier-ignore
-        {
-          const rr                = (0b0000_0011_0000_0000 & this.args[0]) >> 8;
-          const ff                = (0b0000_0000_0000_0011 & this.args[0]);
-          const aaaaaaaaaaaaaaaa  = (0b0000_0000_1111_1100 & this.args[0]) << 8
-                                  | (0b0000_0011_1111_1111 & this.args[1]);
-          
-          let regIndex = null;
-          switch (rr) {
-            case 0b00: {regIndex = 4; break;}
-            case 0b01: {regIndex = 5; break;}
-            case 0b10: {regIndex = 6; break;}
-          }
-          if (regIndex != null) {
-            this.r[regIndex] = this.r[7];
-          }
-          if (ff === 0b01) this.i = true;
-          if (ff === 0b10) this.i = false;
-          this.r[7] = aaaaaaaaaaaaaaaa;
-        }
-
-        this.state = "FETCH_OPCODE:BAR";
-        break;
-      }
-
-      case "BRANCH_READ_OFFSET:BAR_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "BRANCH_READ_OFFSET:NACT_0";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "BRANCH_READ_OFFSET:DTB_0";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:DTB_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.args[0] = this.bus.data;
-        this.state = "BRANCH_READ_OFFSET:NACT_1";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "BRANCH_READ_OFFSET:NACT_2";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:NACT_2": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "BRANCH_READ_OFFSET:NACT_3";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:NACT_3": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "BRANCH_READ_OFFSET:NACT_4";
-        break;
-      }
-      case "BRANCH_READ_OFFSET:NACT_4": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data.
-        this.args[1] = this.bus.data;
-        let condition = false;
-        switch (0b0000_0000_0000_0111 & this.opcode) {
-          // B / NOPP
-          case 0b000: {
-            condition = true;
-            break;
-          }
-          // BC / BNC
-          case 0b001: {
-            condition = this.c;
-            break;
-          }
-          // BOV / BNOV
-          case 0b010: {
-            condition = this.o;
-            break;
-          }
-          // BPL / BMI
-          case 0b011: {
-            condition = !this.s;
-            break;
-          }
-          // BEQ / BNEQ
-          case 0b100: {
-            condition = this.z;
-            break;
-          }
-          // BLT / BGE
-          case 0b101: {
-            condition = this.s !== this.o;
-            break;
-          }
-          // BLE / BGT
-          case 0b110: {
-            condition = this.z || this.s !== this.o;
-            break;
-          }
-          // BUSC / BESC
-          case 0b111: {
-            condition = this.s !== this.c;
-            break;
-          }
-        }
-
-        if (0b0000_0000_0000_1000 & this.opcode) {
-          condition = !condition;
-        }
-
-        if (condition) {
-          this.state = "BRANCH_JUMP:NACT_0";
-        } else {
-          this.state = "FETCH_OPCODE:BAR";
-        }
-        break;
-      }
-
-      case "BRANCH_JUMP:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        this.state = "BRANCH_JUMP:NACT_1";
-        break;
-      }
-      case "BRANCH_JUMP:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        const direction = 0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
-        this.r[7] += direction * (this.args[0] + 1);
-        this.state = "FETCH_OPCODE:BAR";
-        break;
-      }
-
-      case "INDIRECT_WRITE:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Data to write. Devices should latch the
-        // address at this time and perform address decoding.
-        this.bus.data = this.r[this.f1] || 0;
-        this.state = "INDIRECT_WRITE:NACT_0";
-        break;
-      }
-      case "INDIRECT_WRITE:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INDIRECT_WRITE:DW";
-        break;
-      }
-      case "INDIRECT_WRITE:DW": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DW;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU asserts the data to be written. The addressed device can
-        // latch the data at this time, although it is not necessary yet, as the
-        // data is stable through the next phase.
-        this.bus.data = this.r[this.f2];
-        this.state = "INDIRECT_WRITE:DWS";
-        break;
-      }
-      case "INDIRECT_WRITE:DWS": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DWS;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU continues to assert the data to be written. The addressed
-        // device can latch the data at this time if it hasn't already.
-        this.bus.data = this.r[this.f2];
-        this.state = "INDIRECT_WRITE:NACT_1";
-        break;
-      }
-      case "INDIRECT_WRITE:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-
-        // If the address register specified is R4-R7 (the auto-incrementing
-        // registers), then the value in the address register will be
-        // incremented by one after the value in the source register has been
-        // stored at the designated address.
-        if (this.f1 >= 4) {
-          this.r[this.f1] += 1;
-        }
-        this._executeInstruction();
-        break;
-      }
-
-      case "DIRECT_READ:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "DIRECT_READ:NACT_0";
-        break;
-      }
-      case "DIRECT_READ:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "DIRECT_READ:ADAR";
-        break;
-      }
-      case "DIRECT_READ:ADAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.ADAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts the data that is at the location
-        // addressed during BAR. This data is then latched as an address by all
-        // devices for a subsequent DTB bus phase. The CPU remains off the bus
-        // during this cycle.
-        this.state = "DIRECT_READ:NACT_1";
-        break;
-      }
-      case "DIRECT_READ:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The device deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "DIRECT_READ:DTB";
-        break;
-      }
-      case "DIRECT_READ:DTB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The newly-addressed device (the one whose address was given during
-        // ADAR) asserts its data on the bus. The CPU then reads this data.
-        this.state = "DIRECT_READ:NACT_2";
-        break;
-      }
-      case "DIRECT_READ:NACT_2": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The device deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-
-        this._executeInstruction();
-        break;
-      }
-
-      case "DIRECT_WRITE:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Data to write. Devices should latch the
-        // address at this time and perform address decoding.
-        this.bus.data = this.r[7];
-        this.r[7] += 1;
-        this.state = "DIRECT_WRITE:NACT_0";
-        break;
-      }
-      case "DIRECT_WRITE:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "DIRECT_WRITE:ADAR";
-        break;
-      }
-      case "DIRECT_WRITE:ADAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.ADAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts the data that is at the location
-        // addressed during BAR. This data is then latched as an address by all
-        // devices for subsequent DW and DWS bus phase. The CPU remains off the
-        // bus during this cycle.
-        this.state = "DIRECT_WRITE:NACT_1";
-        break;
-      }
-      case "DIRECT_WRITE:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The device deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "DIRECT_WRITE:DW";
-        break;
-      }
-      case "DIRECT_WRITE:DW": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DW;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU asserts the data to be written. The newly-addressed device
-        // (the one whose address was given during ADAR) can latch the data at
-        // this time, although it is not necessary yet, as the data is stable
-        // through the next phase.
-        this.state = "DIRECT_WRITE:DWS";
-        break;
-      }
-      case "DIRECT_WRITE:DWS": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DWS;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU continues to assert the data to be written. The addressed
-        // device can latch the data at this time if it hasn't already.
-        this.state = "DIRECT_WRITE:NACT_2";
-        break;
-      }
-      case "DIRECT_WRITE:NACT_2": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-
-        this._executeInstruction();
-        break;
-      }
-
-      case "INDIRECT_SDBD_READ:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // CPU asserts address of the Instruction or Data to read. Devices
-        // should latch the address at this time and perform address decoding.
-        this.r[7] += 1;
-        this.state = "INDIRECT_SDBD_READ:NACT_0";
-        break;
-      }
-      case "INDIRECT_SDBD_READ:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INDIRECT_SDBD_READ:DTB";
-        break;
-      }
-      case "INDIRECT_SDBD_READ:DTB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts the data that is at the location
-        // addressed during BAR. This data is then latched as an address by all
-        // devices for a subsequent DTB bus phase. The CPU remains off the bus
-        // during this cycle.
-        this.state = "INDIRECT_SDBD_READ:BAR";
-        break;
-      }
-      case "INDIRECT_SDBD_READ:BAR": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.BAR;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The device deasserts the bus during the first quarter of this cycle,
-        // and the CPU asserts a new address for the upper byte of Data during
-        // the latter half of this cycle. Notice that there is no NACT spacing
-        // cycle before this BAR!
-        this.state = "INDIRECT_SDBD_READ:NACT_1";
-        break;
-      }
-      case "INDIRECT_SDBD_READ:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INDIRECT_SDBD_READ:DTB";
-        break;
-      }
-      case "INDIRECT_SDBD_READ:DTB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DTB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The addressed device asserts its data on the bus. The CPU then reads
-        // this data. As with cycle 3, there is no NACT spacing cycle after this
-        // cycle!
-
-        this._executeInstruction();
-        break;
-      }
-
-      case "INTERRUPT:INTAK": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.INTAK;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU asserts the current Stack Pointer address (the value in R6),
-        // and increments the stack pointer internally. Devices are expected to
-        // latch this address and decode it internally. Also, devices are
-        // expected to take any special interrupt-acknowledgement steps at this
-        // time. (On the Intellivision, this bus phase is remapped to BAR for
-        // most devices. The only device that sees INTAK is the 16-bit System
-        // RAM.)
-        this.state = "INTERRUPT:NACT_0";
-        break;
-      }
-      case "INTERRUPT:NACT_0": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INTERRUPT:DW";
-        break;
-      }
-      case "INTERRUPT:DW": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DW;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU outputs the current program counter address. The device
-        // addressed during INTAK should latch the data either now or during the
-        // next cycle (DWS).
-        this.state = "INTERRUPT:DWS";
-        break;
-      }
-      case "INTERRUPT:DWS": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.DWS;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU continues to assert the current program counter address. If
-        // the addressed device hasn't done so already, it should latch the data
-        // now.
-        this.state = "INTERRUPT:NACT_1";
-        break;
-      }
-      case "INTERRUPT:NACT_1": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The CPU deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-        this.state = "INTERRUPT:IAB";
-        break;
-      }
-      case "INTERRUPT:IAB": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.IAB;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // An external device asserts the new program counter address (the
-        // address of the interrupt service routine) on the bus. The CPU latches
-        // this address and transfers it to the program counter. On the
-        // Intellivision, one of the EXEC ROMs handles the program counter
-        // address assertion.
-        this.state = "INTERRUPT:NACT_2";
-        break;
-      }
-      case "INTERRUPT:NACT_2": {
-        if (this.ticks === 0) {
-          this.bus.flags = Bus.___;
-          return;
-        }
-        if (this.ticks !== 3) return;
-        // The device deasserts the bus, and no other bus activity occurs during
-        // this cycle.
-
-        this._executeInstruction();
-        break;
-      }
-
-      default: {
-        throw new UnreachableCaseError(this.state);
-      }
-    }
-  }
-
-  /**
-   * Decoded from the current opcode.
-   *
-   * Register index in opcodes with this form:
-   *
-   * ```txt
-   * 0000:0000:00rr:r000
-   * ```
-   */
-  f1: RegisterIndex = 0;
-  /**
-   * Decoded from the current opcode.
-   *
-   * Register index in opcodes with this form:
-   *
-   * ```txt
-   * 0000:0000:0000:0rrr
-   * ```
-   */
-  f2: RegisterIndex = 0;
-
-  effectiveAddress: number = 0xffff;
-
-  _decodeInstruction() {
-    this.instruction = decodeOpcode(this.opcode);
-
-    this.f1 = ((0b0000_0000_0011_1000 & this.opcode) >> 3) as RegisterIndex;
-    this.f2 = (0b0000_0000_0000_0111 & this.opcode) as RegisterIndex;
-    const isExternalReferenceInstruction = 0b0000_0001_0000_0000 & this.opcode;
-    
-
-    if (!this.instruction) {
-      trace(
-        `Uknown instruction opcode: $${this.opcode
-          .toString(16)
-          .padStart(4, "0")}`,
-      );
-      this.state = "FETCH_OPCODE:BAR";
-      return;
-    }
-    this.state = INSTRUCTION_STATES[this.instruction.mnemonic];
-
-    // If the double-byte flag is set, and we're making an indirect read next,
-    // we want to actually enter the special SDBD mode for indirect reads:
-    if (this.state === "INDIRECT_READ:BAR" && this.d) {
-      this.state = "INDIRECT_SDBD_READ:BAR";
-    }
-  }
-
-  _executeInstruction() {
-    if (!this.instruction) {
-      throw new Error("No decoded instruction to execute");
-    }
-
-    this.prevInstruction = this.instruction;
-
-    switch (this.instruction.mnemonic) {
-      case "HLT": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SDBD": {
-        this.d = true;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "EIS": {
-        this.i = true;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "DIS": {
-        this.i = false;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "J": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "TCI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "CLRC": {
-        this.c = false;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "SETC": {
-        this.c = true;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "INCR": {
-        const i = decodeRegisterIndex(this.opcode);
-        this.r[i] = this.r[i] + 1;
-        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
-        this.z = this.r[i] === 0;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "DECR": {
-        const i = decodeRegisterIndex(this.opcode);
-        this.r[i] = this.r[i] - 1;
-        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
-        this.z = this.r[i] === 0;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "COMR": {
-        const i = decodeRegisterIndex(this.opcode);
-        this.r[i] = this.r[i] ^ 0xffff;
-        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
-        this.z = this.r[i] === 0;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "NEGR": {
-        const i = decodeRegisterIndex(this.opcode);
-        this.r[i] = (this.r[i] ^ 0xffff) + 1;
-        this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
-        this.z = this.r[i] === 0;
-        // TODO: set the overflow flag TODO: set the carry flag
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "ADCR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "GSWD": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "NOP": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SIN": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "RSWD": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SWAP": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SLL": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "RLC": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SLLC": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SLR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SAR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "RRC": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SARC": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "MOVR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "ADDR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SUBR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "CMPR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "ANDR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "XORR": {
-        const result = this.r[this.f2] ^ this.r[this.f1];
-        this.z = result === 0;
-        this.s = (result & 0b1000_0000_0000_0000) !== 0;
-        this.r[this.f2] = result;
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "B": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "MVO": {
-        // HACKish - I feel like I'm misunderstanding something about the
-        // internal mechanics of the CPU here.
-        if (this.state === "DIRECT_WRITE:NACT_2") {
-          this.state = "FETCH_OPCODE:BAR";
-        } else {
-          this.state = "DIRECT_WRITE:BAR";
-        }
-        break;
-      }
-      case "MVO@":
-      case "MVOI": {
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "MVI@":
-      case "MVI":
-      case "MVII": {
-        this.r[this.f2] = this.args[0];
-        this.state = "FETCH_OPCODE:BAR";
-        return;
-      }
-      case "ADD": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "ADD@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "ADDI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SUB": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SUB@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "SUBI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "CMP": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "CMP@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "CMPI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "AND": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "AND@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "ANDI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "XOR": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "XOR@": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      case "XORI": {
-        throw new Error(`${this.instruction.mnemonic} not implemented`);
-      }
-      default: {
-        throw new UnreachableCaseError(this.instruction.mnemonic);
-      }
-    }
-  }
-}
-
-const opcodeLookup: InstructionConfig[] = [];
-for (const [rangeKey, instructionConfig] of Object.entries(instructions)) {
-  const [start, end = start] = rangeKey
-    .split("-")
-    .map((str) => parseInt(str, 16)) as [number, number | undefined];
-  for (let i = start; i <= end; ++i) {
-    opcodeLookup[i] = instructionConfig;
-  }
-}
-
-export const decodeOpcode = (opcode: number): InstructionConfig | null => {
-  return opcodeLookup[opcode] ?? null;
-};
-
-const decodeRegisterIndex = (opcode: number): RegisterIndex => {
-  return (opcode & 0b0000_0000_0000_0111) as any;
-};
-
-export const forTestSuite = {
-  decodeOpcode,
-};
-
-export class RAM implements BusDevice {
-  data: Uint16Array;
-  start: number;
-  _addr: number | null = null;
-  bus: Bus;
-  ticks: number = 0;
-  name: string = "RAM";
-
-  constructor(bus: Bus, start: number, end: number) {
-    this.bus = bus;
-    this.start = start;
-    this.data = new Uint16Array(end - start);
-  }
-
-  debug_read(addrIn: number): number | null {
-    const addr = addrIn - this.start;
-    const data = this.data[addr];
-    if (data == null) return null;
-    return data;
-  }
-
-  _readAndDecodeAddr() {
-    const addr = this.bus.data - this.start;
-
-    if (addr >= 0 && addr < this.data.length) {
-      this._addr = addr;
-      trace(
-        new Error(
-          `this._addr = $${this._addr.toString(
-            16,
-          )} (this.bus.data($${this.bus.data.toString(
-            16,
-          )}) - this.start($${this.start.toString(16)}))`,
-        ).stack,
-      );
-    } else {
-      this._addr = null;
-    }
-  }
-
-  _assertDataAtAddrToBus() {
-    if (this._addr == null) return;
-
-    const data = this.data[this._addr];
-    if (data == null) return;
-    trace(
-      new Error(
-        `this.bus.data = $${data.toString(
-          16,
-        )} (this._addr($${this._addr.toString(16)}))`,
-      ).stack,
-    );
-    this.bus.data = data;
-    this._addr = null;
-  }
-
-  _readDataOnBusToAddr() {
-    if (this._addr == null) return;
-
-    this.data[this._addr] = this.bus.data;
+    this.busSequence = "INITIALIZATION";
+    this.busSequenceIndex = 0;
   }
 
   clock(): void {
-    trace(this.name);
-    this.ticks = (this.ticks + 1) % 4;
+    this.#ts = ((this.#ts + 1) % 4) as TimeSlot;
 
-    switch (this.bus.flags) {
-      case Bus.BAR: {
-        // During this phase, the CPU asserts the address for the current memory
-        // access. All devices on the bus are expected to latch this address and
-        // perform address decoding at this time.
+    const busSequence = BusSequences[this.busSequence];
+    const busControl = busSequence[this.busSequenceIndex] as BusFlags;
+    if (this.#ts === 0) {
+      this.bus.flags = busControl;
+      // trace(
+      //   `${this.busSequence}[${this.busSequenceIndex}]:${BUS_FLAG_STRINGS[busControl]}`,
+      // );
+    }
 
-        // Latch the decoded address from the bus if it falls within our address
-        // range:
-        if (this.ticks === 3) return this._readAndDecodeAddr();
-        return;
+    switch (busControl) {
+      case Bus.IAB: {
+        if (this.#ts === 1) {
+          // Doing the write and the read here; unclear what device actually
+          // asserts the reset vector so I'm just doing it all in one step,
+          // here.
+          this.bus.data = CP1610.RESET_VECTOR;
+        } else if (this.#ts === 2) {
+          this.r[7] = this.bus.data;
+        }
+        break;
       }
-      case Bus.DTB: {
-        // This phase is entered during a read cycle. During this phase, the
-        // currently addressed device should assert its data on the bus. The CPU
-        // then reads this data.
-        if (this.ticks === 1) return this._assertDataAtAddrToBus();
-        return;
+      case Bus.BAR: {
+        if (this.#ts === 2) {
+          let addr: number;
+          switch (this.busSequence) {
+            case "INITIALIZATION": {
+              addr = CP1610.RESET_VECTOR;
+              break;
+            }
+            case "ADDRESS_DIRECT_READ":
+            case "ADDRESS_DIRECT_WRITE":
+            case "JUMP":
+            case "BRANCH_JUMP":
+            case "INSTRUCTION_FETCH": {
+              addr = this.r[7];
+              this.r[7] += 1;
+              break;
+            }
+            case "ADDRESS_INDIRECT_READ":
+            case "ADDRESS_INDIRECT_WRITE": {
+              addr = this.#effectiveAddress;
+              break;
+            }
+            case "ADDRESS_INDIRECT_READ_SDBD": {
+              addr = this.#effectiveAddress;
+              this.#effectiveAddress += 1;
+              break;
+            }
+            case "BRANCH_SKIP":
+            case "EXEC_NACT_2":
+            case "EXEC_NACT_4": {
+              addr = 0xaaaa;
+              break;
+            }
+            default: {
+              throw new UnreachableCaseError(this.busSequence);
+            }
+          }
+          this.bus.data = addr;
+        }
+        break;
       }
       case Bus.ADAR: {
-        // This bus phase is issued by the CPU during a Direct Addressing Mode
-        // instruction. Prior to this phase, an address will have been latched
-        // in a device by a prior BAR or ADAR bus phase.
-        //
-        // Then, during this phase, the currently selected device responds with
-        // its data on the bus, and at the end of this phase, all devices should
-        // latch this address as the address for the next memory access (DTB,
-        // DW, or DWS phases).
-        //
-        // The CPU asserts nothing during this phase -- rather, it expects the
-        // currently addressed device to inform the rest of the machine of the
-        // address for the next access.
-        if (this.ticks === 1) return this._assertDataAtAddrToBus();
-        if (this.ticks === 3) return this._readAndDecodeAddr();
-        return;
+        // Other bus devices should have latched address from prior `BAR`, and
+        // now should assert the data at this address, which is to be treated as
+        // another address in the following DTB phase.
+        break;
       }
-      case Bus.DW: {
-        return;
+      case Bus.DTB: {
+        if (this.#ts === 2) {
+          switch (this.busSequence) {
+            case "INSTRUCTION_FETCH": {
+              this.opcode = this.bus.data;
+              break;
+            }
+            case "JUMP": {
+              if (this.#jumpOperand1 == null) {
+                this.#jumpOperand1 = this.bus.data;
+              } else if (this.#jumpOperand2 == null) {
+                this.#jumpOperand2 = this.bus.data;
+              }
+              break;
+            }
+            case "INITIALIZATION":
+            case "ADDRESS_DIRECT_READ":
+            case "ADDRESS_DIRECT_WRITE":
+            case "ADDRESS_INDIRECT_READ":
+            case "ADDRESS_INDIRECT_WRITE":
+            case "BRANCH_SKIP":
+            case "BRANCH_JUMP":
+            case "EXEC_NACT_2":
+            case "EXEC_NACT_4": {
+              this.#dtbData = this.bus.data;
+              break;
+            }
+            case "ADDRESS_INDIRECT_READ_SDBD": {
+              if (this.busSequenceIndex === 2) {
+                this.#dtbData = this.bus.data & 0x00ff;
+              } else {
+                this.#dtbData |= (this.bus.data & 0x00ff) << 8;
+              }
+              break;
+            }
+            default: {
+              throw new UnreachableCaseError(this.busSequence);
+            }
+          }
+        }
+        break;
       }
+      case Bus.DW:
       case Bus.DWS: {
-        // The DW and DWS bus phases initiate a write cycle. They always occur
-        // together on adjacent cycles, with data remaining stable on the bus
-        // across the transition from DW to DWS. During these phases, the data
-        // being written is available for external memories to latch. The
-        // CP-1600 allows two full CPU cycles for external RAM to latch the
-        // data.
-        if (this.ticks === 3) return this._readDataOnBusToAddr();
-        return;
-      }
-      case Bus.IAB: {
-        // This bus phase is entered during interrupt processing, after the
-        // current program counter has been written to the stack. It's also
-        // entered into on the first cycle after coming out of RESET. During
-        // this phase, an external device should assert the address of the
-        // Interrupt or RESET vector as appropriate. The CPU then moves this
-        // address into the program counter and resumes execution.
-        if (this.ticks === 1) return this._assertDataAtAddrToBus();
-        return;
+        this.bus.data = this.r[this.#f2];
+        break;
       }
       case Bus.INTAK: {
-        // The CPU enters this bus phase on the first cycle of interrupt
-        // processing. During the phase, the CPU places the current stack
-        // pointer value on the bus as it prepares to "push" the current program
-        // counter on the stack. Devices are expected to treat INTAK similarly
-        // to a BAR bus phase. Indeed, on the Intellivision Master Component,
-        // only the 16-bit System RAM sees the INTAK bus phase. It uses this bus
-        // phase to trigger a special bus-copy mode as well as for latching the
-        // current address. For all other devices in the system, INTAK is
-        // remapped to BAR by some discrete logic, and so is processed as a
-        // normal addressing cycle elsewhere.
-        return;
+        break;
       }
       case Bus.___: {
-        // During this stage, no device is active on the bus. DB0 through DB15
-        // are allowed to float, with their previous driven value fading away
-        // during this phase.
-        return;
+        break;
       }
       default: {
-        throw new UnreachableCaseError(this.bus.flags);
+        console.error(this);
+        throw new UnreachableCaseError(busControl);
+      }
+    }
+
+    // If we're at the end of the micro-cycle...
+    if (this.#ts === 3) {
+      // ...enter the next step in the bus sequence:
+      this.busSequenceIndex += 1;
+
+      // If we're at the end of our bus sequence...
+      if (this.busSequenceIndex >= busSequence.length) {
+        // ...decode the next bus sequence to run:
+        this.busSequenceIndex = 0;
+        switch (this.busSequence) {
+          case "INITIALIZATION": {
+            this.busSequence = "INSTRUCTION_FETCH";
+            break;
+          }
+          case "EXEC_NACT_2":
+          case "EXEC_NACT_4":
+          case "ADDRESS_INDIRECT_READ":
+          case "ADDRESS_INDIRECT_READ_SDBD":
+          case "ADDRESS_INDIRECT_WRITE":
+          case "ADDRESS_DIRECT_READ":
+          case "ADDRESS_DIRECT_WRITE":
+          case "JUMP":
+          case "BRANCH_SKIP":
+          case "BRANCH_JUMP": {
+            //
+            // EXECUTE INSTRUCTION
+            //
+
+            // trace("EXECUTING INSTRUCTION", {
+            //   opcode: this.opcode.toString(16).padStart(4, "0"),
+            //   external: this.#external,
+            //   operation: this.#operation.toString(2).padStart(3, "0"),
+            //   f1: this.#f1.toString(2).padStart(3, "0"),
+            //   f2: this.#f2.toString(2).padStart(3, "0"),
+            //   effectiveAddress: this.#effectiveAddress
+            //     .toString(16)
+            //     .padStart(4, "0"),
+            // });
+
+            if (this.#external) {
+              switch (this.#operation) {
+                case B: {
+                  if (this.busSequence === "BRANCH_JUMP") {
+                    const direction =
+                      0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
+                    this.r[7] += direction * (this.#dtbData + 1);
+                  } else {
+                    this.r[7] += 1;
+                  }
+                  break;
+                }
+                case MVO: {
+                  break;
+                }
+                case MVI: {
+                  this.r[this.#f2] = this.#dtbData;
+                  break;
+                }
+                case ADD: {
+                  break;
+                }
+                case SUB: {
+                  break;
+                }
+                case CMP: {
+                  break;
+                }
+                case AND: {
+                  const i = this.#f2;
+                  this.r[i] &= this.#dtbData;
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                case XOR: {
+                  const i = this.#f2;
+                  this.r[i] ^= this.#dtbData;
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                default: {
+                  throw new UnreachableCaseError(this.#operation);
+                }
+              }
+            } else {
+              switch (this.#operation) {
+                // These indicate single-register operations, which have a
+                // secondary opcode within f1:
+                case 0b000: {
+                  switch (this.#f1) {
+                    case 0b000: {
+                      // Special case: `0000 000` indicates a jump instruction:
+                      const rr =
+                        (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
+                      const ff = 0b0000_0000_0000_0011 & this.#jumpOperand1!;
+                      const aaaaaaaaaaaaaaaa =
+                        ((0b0000_0000_1111_1100 & this.#jumpOperand1!) << 8) |
+                        (0b0000_0011_1111_1111 & this.#jumpOperand2!);
+
+                      let regIndex = null;
+                      switch (rr) {
+                        case 0b00:
+                          regIndex = 4;
+                          break;
+                        case 0b01:
+                          regIndex = 5;
+                          break;
+                        case 0b10:
+                          regIndex = 6;
+                          break;
+                      }
+                      if (regIndex != null) {
+                        this.r[regIndex] = this.r[7];
+                      }
+                      if (ff === 0b01) this.i = true;
+                      if (ff === 0b10) this.i = false;
+                      // trace("jumping", {
+                      //   external: this.#external,
+                      //   operation: this.#operation,
+                      //   f1: this.#f1,
+                      //   opcode: this.opcode,
+                      //   aaaaaaaaaaaaaaaa,
+                      //   j1: this.#jumpOperand1,
+                      //   j2: this.#jumpOperand2,
+                      //   busSequence: this.busSequence,
+                      //   busSequenceIndex: this.busSequenceIndex,
+                      //   'this.i': this.i,
+                      // });
+                      this.r[7] = aaaaaaaaaaaaaaaa;
+                      break;
+                    }
+
+                    case 0b001: /* INCR */ {
+                      const i = this.#f2;
+                      this.r[i] += 1;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b010: /* DECR */ {
+                      const i = this.#f2;
+                      this.r[i] -= 1;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b011:
+                      /* COMR */ break;
+                    case 0b100:
+                      /* NEGR */ break;
+                    case 0b101:
+                      /* ADCR */ break;
+                    case 0b110:
+                      /* GSWD */ break;
+                    case 0b111:
+                      /* RSWD */ break;
+                    default: {
+                      throw new UnreachableCaseError(this.#f1);
+                    }
+                  }
+                  break;
+                }
+                // Register shift operations break down the opcode differently
+                // so we have special logic for them here:
+                case 0b001: {
+                  // switch (this.#f1) {
+                  //   case 0b000: /* SWAP */ break;
+                  //   case 0b001: /* SLL  */ break;
+                  //   case 0b010: /* RLC  */ break;
+                  //   case 0b011: /* SLLC */ break;
+                  //   case 0b100: /* SLR  */ break;
+                  //   case 0b101: /* SAR  */ break;
+                  //   case 0b110: /* RRC  */ break;
+                  //   case 0b111: /* SARC */ break;
+                  //   default: {
+                  //     throw new UnreachableCaseError(this.#f1);
+                  //   }
+                  // }
+                  const i = (0b011 & this.#f2) as Triplet;
+                  const shiftTwice = Boolean(0b100 & this.#f2);
+                  if (this.#f1 === 0b000) {
+                    // SWAP
+                    if (shiftTwice) {
+                    } else {
+                      const lo = this.r[i] & 0x00ff;
+                      const hi = this.r[i] & 0xff00;
+                      this.r[i] = (hi >> 8) | (lo << 8);
+                    }
+                  } else {
+                    // const rightShift = Boolean(0b100 & this.#f1);
+                    // const withLinkBits = Boolean(0b010 & this.#f1);
+                    // const arithmetic = Boolean(0b001 & this.#f1);
+                  }
+
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+
+                  break;
+                }
+                // The rest of these operations are register to register
+                // operations:
+                case 0b010: {
+                  /* MOVR */
+                  const i = this.#f2;
+                  this.r[i] = this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                case 0b011:
+                  /* ADDR */ break;
+                case 0b100:
+                  /* SUBR */ break;
+                case 0b101:
+                  /* CMPR */ break;
+                case 0b110: /* ANDR */ {
+                  const i = this.#f2;
+                  this.r[i] &= this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                case 0b111: /* XORR */ {
+                  const i = this.#f2;
+                  this.r[i] ^= this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                default: {
+                  throw new UnreachableCaseError(this.#operation);
+                }
+              }
+            }
+
+            // Most sequences go straight into fetching the next instruction:
+            this.busSequence = "INSTRUCTION_FETCH";
+            this.#jumpOperand1 = null;
+            this.#jumpOperand2 = null;
+            break;
+          }
+          case "INSTRUCTION_FETCH": {
+            // After we've fetched our instruction, we need to decode what to do
+            // next by looking at the opcode we just read.
+            if (this.opcode === SDBD_OPCODE) {
+              this.d = true;
+              this.busSequence = "EXEC_NACT_2";
+              break;
+            }
+
+            // prettier-ignore
+            {
+              this.#external = Boolean((0b000000_1000_000_000 & this.opcode));
+              this.#operation = /* */ ((0b000000_0111_000_000 & this.opcode) >> 6) as Triplet;
+              this.#f1 = /*        */ ((0b000000_0000_111_000 & this.opcode) >> 3) as Triplet;
+              this.#f2 = /*        */ ((0b000000_0000_000_111 & this.opcode) >> 0) as Triplet;
+            }
+
+            if (this.#external) {
+              const indirect = this.#f1 !== 0b000;
+              switch (this.#operation) {
+                case B: {
+                  let condition = false;
+                  switch (this.#f2) {
+                    // B / NOPP
+                    case 0b000: {
+                      condition = true;
+                      break;
+                    }
+                    // BC / BNC
+                    case 0b001: {
+                      condition = this.c;
+                      break;
+                    }
+                    // BOV / BNOV
+                    case 0b010: {
+                      condition = this.o;
+                      break;
+                    }
+                    // BPL / BMI
+                    case 0b011: {
+                      condition = !this.s;
+                      break;
+                    }
+                    // BEQ / BNEQ
+                    case 0b100: {
+                      condition = this.z;
+                      break;
+                    }
+                    // BLT / BGE
+                    case 0b101: {
+                      condition = this.s !== this.o;
+                      break;
+                    }
+                    // BLE / BGT
+                    case 0b110: {
+                      condition = this.z || this.s !== this.o;
+                      break;
+                    }
+                    // BUSC / BESC
+                    case 0b111: {
+                      condition = this.s !== this.c;
+                      break;
+                    }
+                  }
+
+                  if (0b0000_0000_0000_1000 & this.opcode) {
+                    condition = !condition;
+                  }
+
+                  if (condition) {
+                    this.busSequence = "BRANCH_JUMP";
+                  } else {
+                    this.busSequence = "BRANCH_SKIP";
+                  }
+                  break;
+                }
+                case MVO: {
+                  this.busSequence = indirect
+                    ? "ADDRESS_INDIRECT_WRITE"
+                    : "ADDRESS_DIRECT_WRITE";
+                  break;
+                }
+                case MVI:
+                case ADD:
+                case SUB:
+                case CMP:
+                case AND:
+                case XOR: {
+                  this.busSequence = indirect
+                    ? "ADDRESS_INDIRECT_READ"
+                    : "ADDRESS_DIRECT_READ";
+                  break;
+                }
+                default: {
+                  throw new UnreachableCaseError(this.#operation);
+                }
+              }
+
+              // Handle effective address calculation and pre/post
+              // incrementation of registers:
+              if (this.#operation !== B) {
+                // CP1600 docs say that SDBD is not supported for anything but
+                // R1, R2, R3, R4, and R5, but we assume double
+                // increment/decrement behavior regardless here.
+                const offset = this.d ? 2 : 1;
+                switch (this.#f1) {
+                  case 1:
+                  case 2:
+                  case 3: {
+                    // Destination register R1-R3, no post-increment
+                    this.#effectiveAddress = this.r[this.#f1];
+                    break;
+                  }
+                  case 4:
+                  case 5:
+                  case 7: {
+                    // Destination register R4, R5, or R7, post-increment
+                    this.#effectiveAddress = this.r[this.#f1];
+                    this.r[this.#f1] += offset;
+                    break;
+                  }
+                  case 6: {
+                    // Stack mode
+
+                    // If input operation, pre-decrement R6
+                    if (this.#operation === MVI) {
+                      this.r[this.#f1] -= offset;
+                    }
+
+                    this.#effectiveAddress = this.r[this.#f1];
+
+                    // If output operation, post-increment R6
+                    if (this.#operation === MVO) {
+                      this.r[this.#f1] += offset;
+                    }
+                  }
+                }
+              }
+
+              if (this.d && this.busSequence === "ADDRESS_INDIRECT_READ") {
+                this.busSequence = "ADDRESS_INDIRECT_READ_SDBD";
+              }
+            } else {
+              // prettier-ignore
+              switch (this.#operation) {
+                // These indicate single-register operations, which have a
+                // secondary opcode within f1:
+                case 0b000: {
+                  switch (this.#f1) {
+                    case 0b000: {
+                      // Special case: `0000 000` indicates a jump instruction:
+                      this.busSequence = "JUMP";
+                      break;
+                    }
+                    case 0b001: /* INCR */ break;
+                    case 0b010: /* DECR */ {
+                      this.busSequence = "EXEC_NACT_2";
+                      break;
+                    }
+                    case 0b011: /* COMR */ break;
+                    case 0b100: /* NEGR */ break;
+                    case 0b101: /* ADCR */ break;
+                    case 0b110: /* GSWD */ break;
+                    case 0b111: /* RSWD */ break;
+                    default: {
+                      throw new UnreachableCaseError(this.#f1);
+                    }
+                  }
+                  break;
+                }
+                // Register shift operations break down the opcode differently
+                // so we have special logic for them here:
+                case 0b001: {
+                  const shiftTwice = 0b100 & this.#f2;
+                  this.busSequence = shiftTwice ? "EXEC_NACT_4" : "EXEC_NACT_2";
+                  break;
+                }
+                // The rest of these operations are register to register
+                // operations:
+                case 0b010: /* MOVR */
+                case 0b011: /* ADDR */
+                case 0b100: /* SUBR */
+                case 0b101: /* CMPR */
+                case 0b110: /* ANDR */
+                case 0b111: /* XORR */ {
+                  // Register-to-register operations tend to take ~6 cycles, so
+                  // 4 for instruction fetch + 2
+                  //
+                  // TODO: MOVR can take an extra cycle if the destination
+                  // register is 6 or 7
+                  this.busSequence = "EXEC_NACT_2";
+                  break;
+                }
+                default: {
+                  throw new UnreachableCaseError(this.#operation);
+                }
+              }
+            }
+
+            // trace("DECODED INSTRUCTION", {
+            //   opcode: this.opcode.toString(16).padStart(4, "0"),
+            //   external: this.#external,
+            //   operation: this.#operation.toString(2).padStart(3, "0"),
+            //   f1: this.#f1.toString(2).padStart(3, "0"),
+            //   f2: this.#f2.toString(2).padStart(3, "0"),
+            //   effectiveAddress: this.#effectiveAddress
+            //     .toString(16)
+            //     .padStart(4, "0"),
+            // });
+
+            this.d = false;
+
+            break;
+          }
+
+          default: {
+            throw new UnreachableCaseError(this.busSequence);
+          }
+        }
       }
     }
   }
-}
 
-export class ROM extends RAM {
-  name: string = "ROM";
-
-  constructor(bus: Bus, start: number, data: Uint16Array) {
-    super(bus, start, start + data.length);
-    // Marginally wasteful since we throw out the original `data` - yeah yeah,
-    // OOP is bad yadda yadda
-    this.data = data;
-  }
-
-  _readDataOnBusToAddr() {
-    // Do nothing. Hence, read-only.
+  debug_read(_addr: number): number | null {
+    return null;
   }
 }
