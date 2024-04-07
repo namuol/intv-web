@@ -1,4 +1,4 @@
-import {InstructionConfig} from "./cp1610";
+import { InstructionConfig } from "./InstructionConfig";
 
 const instructions: {
   [k: string]: InstructionConfig;

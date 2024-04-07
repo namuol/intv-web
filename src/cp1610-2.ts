@@ -1,10 +1,10 @@
 /**
- * Alternate implementation approach for CP-1610, based on official CP-1600
- * documentation from 1975.
+ * Implementation approach for CP-1610, based on official CP-1600 documentation
+ * from 1975 as well as community docs.
  */
 
 import {UnreachableCaseError} from "./UnreachableCaseError";
-import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
+import {Bus, BusFlags, BusDevice} from "./Bus";
 
 // let totalLogs = 0;
 // const trace = (..._: any[]) => {
@@ -177,6 +177,8 @@ export const BUS_FLAG_STRINGS = [
 ] as const;
 
 export class CP1610_2 implements BusDevice {
+  static readonly RESET_VECTOR: number = 0x1000;
+
   #ts: TimeSlot = 0;
   bus: Bus;
   busSequence: keyof typeof BusSequences;
@@ -300,7 +302,7 @@ export class CP1610_2 implements BusDevice {
           // Doing the write and the read here; unclear what device actually
           // asserts the reset vector so I'm just doing it all in one step,
           // here.
-          this.bus.data = CP1610.RESET_VECTOR;
+          this.bus.data = CP1610_2.RESET_VECTOR;
         } else if (this.#ts === 2) {
           this.r[7] = this.bus.data;
         }
@@ -311,7 +313,7 @@ export class CP1610_2 implements BusDevice {
           let addr: number;
           switch (this.busSequence) {
             case "INITIALIZATION": {
-              addr = CP1610.RESET_VECTOR;
+              addr = CP1610_2.RESET_VECTOR;
               break;
             }
             case "ADDRESS_DIRECT_READ":

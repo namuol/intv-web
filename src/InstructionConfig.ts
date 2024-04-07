@@ -1,0 +1,72 @@
+
+export type InstructionConfig = Readonly<{
+  instruction: string;
+  mnemonic: Mnemonic;
+  cycles: ReadonlyArray<number>;
+  interruptable: boolean;
+  in_s?: boolean;
+  in_z?: boolean;
+  in_o?: boolean;
+  in_c?: boolean;
+  in_d?: boolean;
+  out_s?: boolean;
+  out_z?: boolean;
+  out_o?: boolean;
+  out_c?: boolean;
+  out_i?: boolean;
+  out_d?: boolean;
+}>;
+
+export type Mnemonic = "HLT" |
+  "SDBD" |
+  "EIS" |
+  "DIS" |
+  "J" |
+  "TCI" |
+  "CLRC" |
+  "SETC" |
+  "INCR" |
+  "DECR" |
+  "COMR" |
+  "NEGR" |
+  "ADCR" |
+  "GSWD" |
+  "NOP" |
+  "SIN" |
+  "RSWD" |
+  "SWAP" |
+  "SLL" |
+  "RLC" |
+  "SLLC" |
+  "SLR" |
+  "SAR" |
+  "RRC" |
+  "SARC" |
+  "MOVR" |
+  "ADDR" |
+  "SUBR" |
+  "CMPR" |
+  "ANDR" |
+  "XORR" |
+  "B" |
+  "MVO" |
+  "MVO@" |
+  "MVOI" |
+  "MVI" |
+  "MVI@" |
+  "MVII" |
+  "ADD" |
+  "ADD@" |
+  "ADDI" |
+  "SUB" |
+  "SUB@" |
+  "SUBI" |
+  "CMP" |
+  "CMP@" |
+  "CMPI" |
+  "AND" |
+  "AND@" |
+  "ANDI" |
+  "XOR" |
+  "XOR@" |
+  "XORI";

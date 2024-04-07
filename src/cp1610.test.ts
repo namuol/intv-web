@@ -2,7 +2,10 @@ import {describe, expect, test} from "vitest";
 import fs from "fs";
 import glob from "glob-promise";
 
-import {Bus, BusDevice, CP1610, RAM, ROM, forTestSuite} from "./cp1610";
+import {BusDevice, CP1610, forTestSuite} from "./cp1610";
+import { ROM } from "./ROM";
+import { RAM } from "./RAM";
+import { Bus } from "./Bus";
 import {UnreachableCaseError} from "./UnreachableCaseError";
 
 const {decodeOpcode} = forTestSuite;
