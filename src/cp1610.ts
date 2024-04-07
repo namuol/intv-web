@@ -1,7 +1,13 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import instructions from "./instructions";
 
-const trace = (..._: any[]) => {};
+let totalLogs = 0;
+const trace = (..._: any[]) => {
+  if (totalLogs < 359) {
+    console.error(..._);
+    totalLogs += 1;
+  }
+};
 
 export type InstructionConfig = Readonly<{
   instruction: string;
@@ -373,6 +379,7 @@ export class Bus {
    * processed as a normal addressing cycle elsewhere.
    */
   static INTAK = 0b111 as const;
+  ticks: number = 0;
 
   toString(): string {
     return `Bus(${BUS_FLAG_STRINGS[this.flags]}:$${this._data
@@ -389,7 +396,7 @@ export class Bus {
     return this._data & 0xffff;
   }
   set data(_data: number) {
-    trace(new Error(`bus.data = $${_data.toString(16)}`).stack);
+    // trace(`bus.data = $${_data.toString(16)}`);
     this._data = _data & 0xffff;
   }
 
@@ -397,6 +404,15 @@ export class Bus {
   // BUS CONTROL FLAGS
   //
   flags: BusFlags = Bus.___;
+
+  clock() {
+    this.ticks = (this.ticks + 1) % 4;
+    // Bus reads 0xFFFF when there's nothing asserting data; this is mainly to
+    // match jzIntv behavior:
+    if (this.ticks === 3 && this.flags === Bus.___) {
+      this._data = 0xFFFF;
+    }
+  }
 }
 
 /**
@@ -503,7 +519,7 @@ export class CP1610 implements BusDevice {
   state: CpuState = "RESET:IAB";
 
   clock() {
-    trace(this.state);
+    // trace(this.state);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.state) {
@@ -1655,13 +1671,13 @@ export class RAM implements BusDevice {
     if (addr >= 0 && addr < this.data.length) {
       this._addr = addr;
       trace(
-        new Error(
-          `this._addr = $${this._addr.toString(
-            16,
-          )} (this.bus.data($${this.bus.data.toString(
-            16,
-          )}) - this.start($${this.start.toString(16)}))`,
-        ).stack,
+        `[${this.name}] this._addr = $${this._addr
+          .toString(16)
+          .padStart(4, "0")} (this.bus.data($${this.bus.data
+          .toString(16)
+          .padStart(4, "0")}) - this.start($${this.start
+          .toString(16)
+          .padStart(4, "0")}))`,
       );
     } else {
       this._addr = null;
@@ -1674,11 +1690,11 @@ export class RAM implements BusDevice {
     const data = this.data[this._addr];
     if (data == null) return;
     trace(
-      new Error(
-        `this.bus.data = $${data.toString(
-          16,
-        )} (this._addr($${this._addr.toString(16)}))`,
-      ).stack,
+      `[${this.name}] this.bus.data = $${data
+        .toString(16)
+        .padStart(4, "0")} (this._addr($${this._addr
+        .toString(16)
+        .padStart(4, "0")}))`,
     );
     this.bus.data = data;
     this._addr = null;
@@ -1691,7 +1707,7 @@ export class RAM implements BusDevice {
   }
 
   clock(): void {
-    trace(this.name);
+    // trace(this.name);
     this.ticks = (this.ticks + 1) % 4;
 
     switch (this.bus.flags) {

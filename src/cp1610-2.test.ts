@@ -2,14 +2,7 @@ import {describe, expect, test} from "vitest";
 import fs from "fs";
 import glob from "glob-promise";
 
-import {
-  Bus,
-  BusDevice,
-  InstructionConfig,
-  RAM,
-  ROM,
-  forTestSuite,
-} from "./cp1610";
+import {Bus, BusDevice, RAM, ROM, forTestSuite} from "./cp1610";
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {CP1610_2} from "./cp1610-2";
 
@@ -112,7 +105,12 @@ describe("jzIntv fixtures", async () => {
                       this.data,
                     )} CP-1610 (PC = ${$word(cpu.r[7])}) t=${stepCycle}`,
                   );
-                  // console.error(log.at(-1), cpu.busSequence, cpu.busSequenceIndex, this.bus.toString())
+                  // console.error(
+                  //   log.at(-1),
+                  //   cpu.busSequence,
+                  //   cpu.busSequenceIndex,
+                  //   this.bus.toString(),
+                  // );
                 }
               }
               return;
@@ -172,7 +170,7 @@ describe("jzIntv fixtures", async () => {
           }
         }
 
-        debug_read(addr: number): number | null {
+        debug_read(_addr: number): number | null {
           return null;
         }
       }
@@ -187,7 +185,6 @@ describe("jzIntv fixtures", async () => {
       const cpu = new CP1610_2(bus);
       const log: string[] = [];
       const busSniffer = new BusSniffer(bus, (busLog) => log.push(busLog));
-
       const devices = [
         cpu,
         // Rough approximation of various RAM devices:
@@ -200,6 +197,7 @@ describe("jzIntv fixtures", async () => {
       let cycles = 0;
       const tick = () => {
         cycles += 1;
+        bus.clock();
         devices.forEach((device) => device.clock());
       };
 
@@ -326,6 +324,14 @@ describe("jzIntv fixtures", async () => {
             }
           }
 
+          case "MOVR": {
+            if (reg1Index === 7) {
+              return `JR,R${reg0Index}`;
+            } else {
+              return `${instruction.mnemonic} R${reg0Index},R${reg1Index}`;
+            }
+          }
+
           case "XORR": {
             if (reg0Index === reg1Index) {
               return `CLRR R${reg0Index}`;
@@ -368,6 +374,10 @@ describe("jzIntv fixtures", async () => {
           }
           case "SWAP": {
             return `SWAP R${reg1Index}`;
+          }
+          case "ANDI": {
+            const data = cpu.d ? peekBusSDBD(pc + 1) : peekBus(pc + 1);
+            return `${instruction.mnemonic} #${$word(data)},R${reg1Index}`;
           }
         }
 

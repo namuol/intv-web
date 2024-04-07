@@ -6,13 +6,13 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 
-let totalLogs = 0;
-const trace = (..._: any[]) => {
-  if (totalLogs < 59) {
-    console.error(..._);
-    totalLogs += 1;
-  }
-};
+// let totalLogs = 0;
+// const trace = (..._: any[]) => {
+//   if (totalLogs < 59) {
+//     console.error(..._);
+//     totalLogs += 1;
+//   }
+// };
 
 /**
  * Each micro-cycle (m-cycle) is divided into four time slots, which the CPU and
@@ -156,9 +156,16 @@ const BusSequences = {
     Bus.___,
     Bus.___
   ],
+  // prettier-ignore
+  EXEC_NACT_4: [
+    Bus.___,
+    Bus.___,
+    Bus.___,
+    Bus.___
+  ],
 } as const;
 
-const BUS_FLAG_STRINGS = [
+export const BUS_FLAG_STRINGS = [
   "NACT",
   "ADAR",
   "IAB",
@@ -327,7 +334,8 @@ export class CP1610_2 implements BusDevice {
               break;
             }
             case "BRANCH_SKIP":
-            case "EXEC_NACT_2": {
+            case "EXEC_NACT_2":
+            case "EXEC_NACT_4": {
               addr = 0xaaaa;
               break;
             }
@@ -367,7 +375,8 @@ export class CP1610_2 implements BusDevice {
             case "ADDRESS_INDIRECT_WRITE":
             case "BRANCH_SKIP":
             case "BRANCH_JUMP":
-            case "EXEC_NACT_2": {
+            case "EXEC_NACT_2":
+            case "EXEC_NACT_4": {
               this.#dtbData = this.bus.data;
               break;
             }
@@ -418,6 +427,7 @@ export class CP1610_2 implements BusDevice {
             break;
           }
           case "EXEC_NACT_2":
+          case "EXEC_NACT_4":
           case "ADDRESS_INDIRECT_READ":
           case "ADDRESS_INDIRECT_READ_SDBD":
           case "ADDRESS_INDIRECT_WRITE":
@@ -430,16 +440,16 @@ export class CP1610_2 implements BusDevice {
             // EXECUTE INSTRUCTION
             //
 
-            trace("EXECUTING INSTRUCTION", {
-              opcode: this.opcode.toString(16).padStart(4, "0"),
-              external: this.#external,
-              operation: this.#operation.toString(2).padStart(3, "0"),
-              f1: this.#f1.toString(2).padStart(3, "0"),
-              f2: this.#f2.toString(2).padStart(3, "0"),
-              effectiveAddress: this.#effectiveAddress
-                .toString(16)
-                .padStart(4, "0"),
-            });
+            // trace("EXECUTING INSTRUCTION", {
+            //   opcode: this.opcode.toString(16).padStart(4, "0"),
+            //   external: this.#external,
+            //   operation: this.#operation.toString(2).padStart(3, "0"),
+            //   f1: this.#f1.toString(2).padStart(3, "0"),
+            //   f2: this.#f2.toString(2).padStart(3, "0"),
+            //   effectiveAddress: this.#effectiveAddress
+            //     .toString(16)
+            //     .padStart(4, "0"),
+            // });
 
             if (this.#external) {
               switch (this.#operation) {
@@ -470,9 +480,17 @@ export class CP1610_2 implements BusDevice {
                   break;
                 }
                 case AND: {
+                  const i = this.#f2;
+                  this.r[i] &= this.#dtbData;
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
                   break;
                 }
                 case XOR: {
+                  const i = this.#f2;
+                  this.r[i] ^= this.#dtbData;
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
                   break;
                 }
                 default: {
@@ -480,7 +498,6 @@ export class CP1610_2 implements BusDevice {
                 }
               }
             } else {
-              // prettier-ignore
               switch (this.#operation) {
                 // These indicate single-register operations, which have a
                 // secondary opcode within f1:
@@ -488,17 +505,24 @@ export class CP1610_2 implements BusDevice {
                   switch (this.#f1) {
                     case 0b000: {
                       // Special case: `0000 000` indicates a jump instruction:
-                      const rr = (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
-                      const ff =  0b0000_0000_0000_0011 & this.#jumpOperand1!;
+                      const rr =
+                        (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
+                      const ff = 0b0000_0000_0000_0011 & this.#jumpOperand1!;
                       const aaaaaaaaaaaaaaaa =
                         ((0b0000_0000_1111_1100 & this.#jumpOperand1!) << 8) |
-                         (0b0000_0011_1111_1111 & this.#jumpOperand2!);
-        
+                        (0b0000_0011_1111_1111 & this.#jumpOperand2!);
+
                       let regIndex = null;
                       switch (rr) {
-                        case 0b00: regIndex = 4; break;
-                        case 0b01: regIndex = 5; break;
-                        case 0b10: regIndex = 6; break;
+                        case 0b00:
+                          regIndex = 4;
+                          break;
+                        case 0b01:
+                          regIndex = 5;
+                          break;
+                        case 0b10:
+                          regIndex = 6;
+                          break;
                       }
                       if (regIndex != null) {
                         this.r[regIndex] = this.r[7];
@@ -535,11 +559,16 @@ export class CP1610_2 implements BusDevice {
                       this.z = this.r[i] === 0;
                       break;
                     }
-                    case 0b011: /* COMR */ break;
-                    case 0b100: /* NEGR */ break;
-                    case 0b101: /* ADCR */ break;
-                    case 0b110: /* GSWD */ break;
-                    case 0b111: /* RSWD */ break;
+                    case 0b011:
+                      /* COMR */ break;
+                    case 0b100:
+                      /* NEGR */ break;
+                    case 0b101:
+                      /* ADCR */ break;
+                    case 0b110:
+                      /* GSWD */ break;
+                    case 0b111:
+                      /* RSWD */ break;
                     default: {
                       throw new UnreachableCaseError(this.#f1);
                     }
@@ -549,21 +578,63 @@ export class CP1610_2 implements BusDevice {
                 // Register shift operations break down the opcode differently
                 // so we have special logic for them here:
                 case 0b001: {
+                  // switch (this.#f1) {
+                  //   case 0b000: /* SWAP */ break;
+                  //   case 0b001: /* SLL  */ break;
+                  //   case 0b010: /* RLC  */ break;
+                  //   case 0b011: /* SLLC */ break;
+                  //   case 0b100: /* SLR  */ break;
+                  //   case 0b101: /* SAR  */ break;
+                  //   case 0b110: /* RRC  */ break;
+                  //   case 0b111: /* SARC */ break;
+                  //   default: {
+                  //     throw new UnreachableCaseError(this.#f1);
+                  //   }
+                  // }
+                  const i = (0b011 & this.#f2) as Triplet;
+                  const shiftTwice = Boolean(0b100 & this.#f2);
+                  if (this.#f1 === 0b000) {
+                    // SWAP
+                    if (shiftTwice) {
+                    } else {
+                      const lo = this.r[i] & 0x00ff;
+                      const hi = this.r[i] & 0xff00;
+                      this.r[i] = (hi >> 8) | (lo << 8);
+                    }
+                  } else {
+                    // const rightShift = Boolean(0b100 & this.#f1);
+                    // const withLinkBits = Boolean(0b010 & this.#f1);
+                    // const arithmetic = Boolean(0b001 & this.#f1);
+                  }
+
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+
                   break;
                 }
                 // The rest of these operations are register to register
                 // operations:
-                case 0b010: /* MOVR */ break;
-                case 0b011: /* ADDR */ break;
-                case 0b100: /* SUBR */ break;
-                case 0b101: /* CMPR */ break;
+                case 0b010: {
+                  /* MOVR */
+                  const i = this.#f2;
+                  this.r[i] = this.r[this.#f1];
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  break;
+                }
+                case 0b011:
+                  /* ADDR */ break;
+                case 0b100:
+                  /* SUBR */ break;
+                case 0b101:
+                  /* CMPR */ break;
                 case 0b110: /* ANDR */ {
                   const i = this.#f2;
                   this.r[i] &= this.r[this.#f1];
                   this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
                   this.z = this.r[i] === 0;
                   break;
-                };
+                }
                 case 0b111: /* XORR */ {
                   const i = this.#f2;
                   this.r[i] ^= this.r[this.#f1];
@@ -681,6 +752,8 @@ export class CP1610_2 implements BusDevice {
                 }
               }
 
+              // Handle effective address calculation and pre/post
+              // incrementation of registers:
               if (this.#operation !== B) {
                 // CP1600 docs say that SDBD is not supported for anything but
                 // R1, R2, R3, R4, and R5, but we assume double
@@ -754,6 +827,8 @@ export class CP1610_2 implements BusDevice {
                 // Register shift operations break down the opcode differently
                 // so we have special logic for them here:
                 case 0b001: {
+                  const shiftTwice = 0b100 & this.#f2;
+                  this.busSequence = shiftTwice ? "EXEC_NACT_4" : "EXEC_NACT_2";
                   break;
                 }
                 // The rest of these operations are register to register
