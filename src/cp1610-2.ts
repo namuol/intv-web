@@ -8,7 +8,7 @@ import {Bus, BusDevice, BusFlags, CP1610} from "./cp1610";
 
 let totalLogs = 0;
 const trace = (..._: any[]) => {
-  if (totalLogs < 30) {
+  if (totalLogs < 59) {
     console.error(..._);
     totalLogs += 1;
   }
@@ -42,6 +42,8 @@ const SUB: 0b100 = 0b100;
 const CMP: 0b101 = 0b101;
 const AND: 0b110 = 0b110;
 const XOR: 0b111 = 0b111;
+
+const SDBD_OPCODE: 0b0000_0000_0000_0001 = 0b0000_0000_0000_0001;
 
 const BusSequences = {
   //
@@ -79,6 +81,14 @@ const BusSequences = {
     Bus.___,
     Bus.DTB,
     Bus.___,
+  ],
+  ADDRESS_INDIRECT_READ_SDBD: [
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
+    Bus.BAR,
+    Bus.___,
+    Bus.DTB,
   ],
   // prettier-ignore
   ADDRESS_INDIRECT_WRITE: [
@@ -311,6 +321,11 @@ export class CP1610_2 implements BusDevice {
               addr = this.#effectiveAddress;
               break;
             }
+            case "ADDRESS_INDIRECT_READ_SDBD": {
+              addr = this.#effectiveAddress;
+              this.#effectiveAddress += 1;
+              break;
+            }
             case "BRANCH_SKIP":
             case "EXEC_NACT_2": {
               addr = 0xaaaa;
@@ -356,6 +371,14 @@ export class CP1610_2 implements BusDevice {
               this.#dtbData = this.bus.data;
               break;
             }
+            case "ADDRESS_INDIRECT_READ_SDBD": {
+              if (this.busSequenceIndex === 2) {
+                this.#dtbData = this.bus.data & 0x00ff;
+              } else {
+                this.#dtbData |= (this.bus.data & 0x00ff) << 8;
+              }
+              break;
+            }
             default: {
               throw new UnreachableCaseError(this.busSequence);
             }
@@ -396,6 +419,7 @@ export class CP1610_2 implements BusDevice {
           }
           case "EXEC_NACT_2":
           case "ADDRESS_INDIRECT_READ":
+          case "ADDRESS_INDIRECT_READ_SDBD":
           case "ADDRESS_INDIRECT_WRITE":
           case "ADDRESS_DIRECT_READ":
           case "ADDRESS_DIRECT_WRITE":
@@ -562,6 +586,11 @@ export class CP1610_2 implements BusDevice {
           case "INSTRUCTION_FETCH": {
             // After we've fetched our instruction, we need to decode what to do
             // next by looking at the opcode we just read.
+            if (this.opcode === SDBD_OPCODE) {
+              this.d = true;
+              this.busSequence = "EXEC_NACT_2";
+              break;
+            }
 
             // prettier-ignore
             {
@@ -653,6 +682,10 @@ export class CP1610_2 implements BusDevice {
               }
 
               if (this.#operation !== B) {
+                // CP1600 docs say that SDBD is not supported for anything but
+                // R1, R2, R3, R4, and R5, but we assume double
+                // increment/decrement behavior regardless here.
+                const offset = this.d ? 2 : 1;
                 switch (this.#f1) {
                   case 1:
                   case 2:
@@ -666,7 +699,7 @@ export class CP1610_2 implements BusDevice {
                   case 7: {
                     // Destination register R4, R5, or R7, post-increment
                     this.#effectiveAddress = this.r[this.#f1];
-                    this.r[this.#f1] += 1;
+                    this.r[this.#f1] += offset;
                     break;
                   }
                   case 6: {
@@ -674,17 +707,21 @@ export class CP1610_2 implements BusDevice {
 
                     // If input operation, pre-decrement R6
                     if (this.#operation === MVI) {
-                      this.r[this.#f1] -= 1;
+                      this.r[this.#f1] -= offset;
                     }
-                    
+
                     this.#effectiveAddress = this.r[this.#f1];
-                    
+
                     // If output operation, post-increment R6
                     if (this.#operation === MVO) {
-                      this.r[this.#f1] += 1;
+                      this.r[this.#f1] += offset;
                     }
                   }
                 }
+              }
+
+              if (this.d && this.busSequence === "ADDRESS_INDIRECT_READ") {
+                this.busSequence = "ADDRESS_INDIRECT_READ_SDBD";
               }
             } else {
               // prettier-ignore
@@ -741,16 +778,19 @@ export class CP1610_2 implements BusDevice {
               }
             }
 
-            trace("DECODED INSTRUCTION", {
-              opcode: this.opcode.toString(16).padStart(4, "0"),
-              external: this.#external,
-              operation: this.#operation.toString(2).padStart(3, "0"),
-              f1: this.#f1.toString(2).padStart(3, "0"),
-              f2: this.#f2.toString(2).padStart(3, "0"),
-              effectiveAddress: this.#effectiveAddress
-                .toString(16)
-                .padStart(4, "0"),
-            });
+            // trace("DECODED INSTRUCTION", {
+            //   opcode: this.opcode.toString(16).padStart(4, "0"),
+            //   external: this.#external,
+            //   operation: this.#operation.toString(2).padStart(3, "0"),
+            //   f1: this.#f1.toString(2).padStart(3, "0"),
+            //   f2: this.#f2.toString(2).padStart(3, "0"),
+            //   effectiveAddress: this.#effectiveAddress
+            //     .toString(16)
+            //     .padStart(4, "0"),
+            // });
+
+            this.d = false;
+
             break;
           }
 

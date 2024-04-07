@@ -224,6 +224,9 @@ describe("jzIntv fixtures", async () => {
         }
         return 0xffff;
       };
+      const peekBusSDBD = (addr: number) => {
+        return ((peekBus(addr + 1) & 0x00ff) << 8) | (peekBus(addr) & 0x00ff);
+      };
 
       const cpuFlags = () => {
         let prevInstruction = cycles / 4 > 13 ? decodeOpcode(cpu.opcode) : null;
@@ -303,9 +306,11 @@ describe("jzIntv fixtures", async () => {
           case "MVII": {
             if (reg0Index === 6) {
               return `PULR R${reg1Index}`;
-            } else {
-              const data = peekBus(pc + 1);
+            } else if (reg0Index === 7) {
+              const data = cpu.d ? peekBusSDBD(pc + 1) : peekBus(pc + 1);
               return `MVII #${$word(data)},R${reg1Index}`;
+            } else {
+              return `MVI@ R${reg0Index},R${reg1Index}`;
             }
           }
           case "MVO":
@@ -360,6 +365,9 @@ describe("jzIntv fixtures", async () => {
               }
             })();
             return `${mnemonic} ${$word(addr)}`;
+          }
+          case "SWAP": {
+            return `SWAP R${reg1Index}`;
           }
         }
 
