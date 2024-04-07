@@ -409,7 +409,6 @@ export class CP1610 implements BusDevice {
         break;
       }
       default: {
-        console.error(this);
         throw new UnreachableCaseError(busControl);
       }
     }
@@ -594,7 +593,25 @@ export class CP1610 implements BusDevice {
                   //   }
                   // }
                   const i = (0b011 & this.#f2) as Triplet;
+                  const rightShift = Boolean(0b100 & this.#f1);
+                  const withLinkBits = Boolean(0b010 & this.#f1);
+                  const arithmetic = Boolean(0b001 & this.#f1);
                   const shiftTwice = Boolean(0b100 & this.#f2);
+
+                  const carryBit = !withLinkBits
+                    ? 0
+                    : rightShift
+                      ? 0b0000_0000_0000_0001
+                      : 0b1000_0000_0000_0000;
+                  const overflowBit = !shiftTwice
+                    ? 0
+                    : rightShift
+                      ? 0b0000_0000_0000_0010
+                      : 0b0100_0000_0000_0000;
+
+                  this.c = (this.r[i] & carryBit) !== 0;
+                  this.o = (this.r[i] & overflowBit) !== 0;
+
                   if (this.#f1 === 0b000) {
                     // SWAP
                     if (shiftTwice) {
@@ -604,9 +621,8 @@ export class CP1610 implements BusDevice {
                       this.r[i] = (hi >> 8) | (lo << 8);
                     }
                   } else {
-                    // const rightShift = Boolean(0b100 & this.#f1);
-                    // const withLinkBits = Boolean(0b010 & this.#f1);
-                    // const arithmetic = Boolean(0b001 & this.#f1);
+                    if (rightShift) {
+                    }
                   }
 
                   this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
@@ -810,16 +826,19 @@ export class CP1610 implements BusDevice {
                       this.busSequence = "JUMP";
                       break;
                     }
-                    case 0b001: /* INCR */ break;
-                    case 0b010: /* DECR */ {
+                    case 0b001: /* INCR */
+                    case 0b010: /* DECR */
+                    case 0b011: /* COMR */
+                    case 0b100: /* NEGR */
+                    case 0b101: /* ADCR */
+                    case 0b110: /* GSWD */
+                    case 0b111: /* RSWD */  {
+                      // All of these operations take up 6 cycles, 4 for
+                      // instruction fetch as usual, plus what I *assume* are
+                      // two NACTs during execution.
                       this.busSequence = "EXEC_NACT_2";
                       break;
                     }
-                    case 0b011: /* COMR */ break;
-                    case 0b100: /* NEGR */ break;
-                    case 0b101: /* ADCR */ break;
-                    case 0b110: /* GSWD */ break;
-                    case 0b111: /* RSWD */ break;
                     default: {
                       throw new UnreachableCaseError(this.#f1);
                     }

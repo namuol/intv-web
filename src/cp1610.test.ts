@@ -21,12 +21,20 @@ const readRomIntoUint16Array = (path: string) => {
 const $word = (n: number) => "$" + word(n);
 const word = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
+const getMappingStartFromCfg = async (path: string): Promise<number> => {
+  const configText = await fs.promises.readFile(path, "utf-8");
+  // prettier-ignore
+  const startStr = configText.split('\n')[1]?.split(' ')[4]?.slice(1);
+  if (!startStr) throw new Error(`Failed to get mapping start from "${path}"`);
+  return parseInt(startStr, 16);
+};
+
 describe("jzIntv fixtures", async () => {
   // TODO: For now, plopping this code into one place for quick iteration, but
   // once a good pattern emerges from this we can pull it out into a test/debug
   // module.
 
-  const fixtures = await glob("./src/fixtures/*.jzintv.txt");
+  const fixtures = await glob("./test-roms/*.jzintv.txt");
   for (const fixturePath of fixtures) {
     test(fixturePath, async () => {
       class BusSniffer implements BusDevice {
@@ -180,7 +188,9 @@ describe("jzIntv fixtures", async () => {
         await fs.promises.readFile(fixturePath, {encoding: "utf-8"})
       ).split("\n");
       const romPath =
-        "./roms/" + fixturePath.split(".jzintv.txt")[0]?.split("/").at(-1);
+        "./test-roms/" +
+        fixturePath.split(".jzintv.txt")[0]?.split("/").at(-1) +
+        ".bin";
 
       const bus = new Bus();
       const cpu = new CP1610(bus);
@@ -192,7 +202,11 @@ describe("jzIntv fixtures", async () => {
         new RAM(bus, 0x0000, 0x1000),
         // Rough approximation of EXEC ROM:
         new ROM(bus, 0x1000, readRomIntoUint16Array("./roms/exec.bin")),
-        new ROM(bus, 0x5000, readRomIntoUint16Array(romPath)),
+        new ROM(
+          bus,
+          await getMappingStartFromCfg(romPath.replace(/.bin$/, ".cfg")),
+          readRomIntoUint16Array(romPath),
+        ),
         busSniffer,
       ];
       let cycles = 0;
