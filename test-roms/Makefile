@@ -1,7 +1,6 @@
 SOURCES = $(wildcard *.asm)
 CFGS = $(SOURCES:.asm=.cfg)
 BINS = $(SOURCES:.asm=.bin)
-ROMS = $(SOURCES:.asm=.rom)
 LOGS = $(SOURCES:.asm=.jzintv.txt)
 
 all: $(BINS) $(CFGS) $(LOGS)
