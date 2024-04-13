@@ -394,6 +394,10 @@ describe("jzIntv fixtures", async () => {
             const data = cpu.d ? peekBusSDBD(pc + 1) : peekBus(pc + 1);
             return `${instruction.mnemonic} #${$word(data)},R${reg1Index}`;
           }
+          case "INCR":
+          case "DECR": {
+            return `${instruction.mnemonic} R${reg0Index}`;
+          }
         }
 
         return instruction.mnemonic;
