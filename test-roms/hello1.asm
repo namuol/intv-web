@@ -22,7 +22,7 @@ ZERO:   DECLE   $0000           ; Screen border control
 ONES:   DECLE   1, 1, 1, 1, 1   ; Color stack initialization
 ;------------------------------------------------------------------------------
 
-TITLE   DECLE   107, "Hello World!", 0
+TITLE   DECLE   124, "Hello World!", 0
 
 MAIN    EIS                     ; Enable interrupts
 here    B       here            ; Spin forever.
