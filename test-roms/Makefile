@@ -17,6 +17,8 @@ all: $(BINS) $(CFGS) $(LOGS)
 
 %.jzintv.txt: %.bin %.cfg 1k.jzintv-script
 	jzintv -d $< --script=1k.jzintv-script | sed 's/^[ \t]*//' | grep -E "^([0-9A-F]{4})|RD|WR" > $@
+# Hack to trigger test reruns while editing assembly files:
+	touch ../src/cp1610.test.ts
 
 .INTERMEDIATE: 1k.jzintv-script
 

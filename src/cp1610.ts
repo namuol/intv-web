@@ -43,6 +43,7 @@ const CMP: 0b101 = 0b101;
 const AND: 0b110 = 0b110;
 const XOR: 0b111 = 0b111;
 
+const HLT_OPCODE: 0b0000_0000_0000_0000 = 0b0000_0000_0000_0000;
 const SDBD_OPCODE: 0b0000_0000_0000_0001 = 0b0000_0000_0000_0001;
 
 const BusSequences = {
@@ -276,6 +277,9 @@ export class CP1610 implements BusDevice {
    */
   d: boolean = false;
 
+  halted: boolean = false;
+  onInstructionFetch: (() => void) | null = null;
+
   constructor(bus: Bus) {
     this.bus = bus;
     this.bus.flags = Bus.___;
@@ -285,6 +289,8 @@ export class CP1610 implements BusDevice {
   }
 
   clock(): void {
+    if (this.halted) return;
+
     this.#ts = ((this.#ts + 1) % 4) as TimeSlot;
 
     const busSequence = BusSequences[this.busSequence];
@@ -309,6 +315,14 @@ export class CP1610 implements BusDevice {
         break;
       }
       case Bus.BAR: {
+        if (
+          this.onInstructionFetch &&
+          this.#ts === 0 &&
+          this.busSequence === "INSTRUCTION_FETCH"
+        ) {
+          this.onInstructionFetch();
+        }
+
         if (this.#ts === 2) {
           let addr: number;
           switch (this.busSequence) {
@@ -458,7 +472,8 @@ export class CP1610 implements BusDevice {
                   if (this.busSequence === "BRANCH_JUMP") {
                     const direction =
                       0b0000_0000_0010_0000 & this.opcode ? -1 : 1;
-                    this.r[7] += direction * (this.#dtbData + 1);
+                    this.r[7] +=
+                      direction * (this.#dtbData + (direction > 0 ? 0 : 1));
                   } else {
                     this.r[7] += 1;
                   }
@@ -505,44 +520,66 @@ export class CP1610 implements BusDevice {
                 case 0b000: {
                   switch (this.#f1) {
                     case 0b000: {
-                      // Special case: `0000 000` indicates a jump instruction:
-                      const rr =
-                        (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
-                      const ff = 0b0000_0000_0000_0011 & this.#jumpOperand1!;
-                      const aaaaaaaaaaaaaaaa =
-                        ((0b0000_0000_1111_1100 & this.#jumpOperand1!) << 8) |
-                        (0b0000_0011_1111_1111 & this.#jumpOperand2!);
+                      switch (this.#f2) {
+                        case 0b100: /* J */ {
+                          // Special case: `0000 000` indicates a jump instruction:
+                          const rr =
+                            (0b0000_0011_0000_0000 & this.#jumpOperand1!) >> 8;
+                          const ff =
+                            0b0000_0000_0000_0011 & this.#jumpOperand1!;
+                          const aaaaaaaaaaaaaaaa =
+                            ((0b0000_0000_1111_1100 & this.#jumpOperand1!) <<
+                              8) |
+                            (0b0000_0011_1111_1111 & this.#jumpOperand2!);
 
-                      let regIndex = null;
-                      switch (rr) {
-                        case 0b00:
-                          regIndex = 4;
+                          let regIndex = null;
+                          switch (rr) {
+                            case 0b00:
+                              regIndex = 4;
+                              break;
+                            case 0b01:
+                              regIndex = 5;
+                              break;
+                            case 0b10:
+                              regIndex = 6;
+                              break;
+                          }
+                          if (regIndex != null) {
+                            this.r[regIndex] = this.r[7];
+                          }
+                          if (ff === 0b01) this.i = true;
+                          if (ff === 0b10) this.i = false;
+                          // trace("jumping", {
+                          //   external: this.#external,
+                          //   operation: this.#operation,
+                          //   f1: this.#f1,
+                          //   opcode: this.opcode,
+                          //   aaaaaaaaaaaaaaaa,
+                          //   j1: this.#jumpOperand1,
+                          //   j2: this.#jumpOperand2,
+                          //   busSequence: this.busSequence,
+                          //   busSequenceIndex: this.busSequenceIndex,
+                          //   'this.i': this.i,
+                          // });
+                          this.r[7] = aaaaaaaaaaaaaaaa;
                           break;
-                        case 0b01:
-                          regIndex = 5;
+                        }
+                        // These are all 4-cycle operations which are handled at
+                        // the end of the `INSTRUCTION_FETCH`
+                        case 0b000:
+                        case 0b001:
+                        case 0b010:
+                        case 0b011:
+                        case 0b101:
+                        case 0b110:
+                        case 0b111: {
                           break;
-                        case 0b10:
-                          regIndex = 6;
-                          break;
+                        }
+
+                        default: {
+                          throw new UnreachableCaseError(this.#f2);
+                        }
                       }
-                      if (regIndex != null) {
-                        this.r[regIndex] = this.r[7];
-                      }
-                      if (ff === 0b01) this.i = true;
-                      if (ff === 0b10) this.i = false;
-                      // trace("jumping", {
-                      //   external: this.#external,
-                      //   operation: this.#operation,
-                      //   f1: this.#f1,
-                      //   opcode: this.opcode,
-                      //   aaaaaaaaaaaaaaaa,
-                      //   j1: this.#jumpOperand1,
-                      //   j2: this.#jumpOperand2,
-                      //   busSequence: this.busSequence,
-                      //   busSequenceIndex: this.busSequenceIndex,
-                      //   'this.i': this.i,
-                      // });
-                      this.r[7] = aaaaaaaaaaaaaaaa;
                       break;
                     }
 
@@ -560,16 +597,71 @@ export class CP1610 implements BusDevice {
                       this.z = this.r[i] === 0;
                       break;
                     }
-                    case 0b011:
-                      /* COMR */ break;
-                    case 0b100:
-                      /* NEGR */ break;
-                    case 0b101:
-                      /* ADCR */ break;
-                    case 0b110:
-                      /* GSWD */ break;
-                    case 0b111:
-                      /* RSWD */ break;
+                    case 0b011: /* COMR */ {
+                      const i = this.#f2;
+                      this.r[i] ^= 0xffff;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b100: /* NEGR */ {
+                      const i = this.#f2;
+                      this.c = this.r[i] === 0x0000;
+                      this.o = this.r[i] === 0x8000;
+                      this.r[i] *= -1;
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b101: /* ADCR */ {
+                      const i = this.#f2;
+                      if (this.c) {
+                        this.o = this.r[i] === 0x7fff;
+                        this.c = this.r[i] === 0xffff;
+                        this.r[i] += 1;
+                      }
+                      this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                      this.z = this.r[i] === 0;
+                      break;
+                    }
+                    case 0b110: {
+                      switch (this.#f2) {
+                        case 0b000:
+                        case 0b001:
+                        case 0b010:
+                        case 0b011: /* GSWD */ {
+                          const i = this.#f2;
+                          // prettier-ignore
+                          const flags = (this.s ? 0b1000 : 0)
+                                      | (this.z ? 0b0100 : 0)
+                                      | (this.o ? 0b0010 : 0)
+                                      | (this.c ? 0b0001 : 0);
+                          this.r[i] = (flags << 4) | (flags << 12);
+                          break;
+                        }
+                        case 0b100:
+                        case 0b101:
+                        case 0b110:
+                        case 0b111: {
+                          // NOP
+                          break;
+                        }
+                        default: {
+                          throw new UnreachableCaseError(this.#f2);
+                        }
+                      }
+
+                      break;
+                    }
+                    case 0b111: /* RSWD */ {
+                      const flags =
+                        (this.r[this.#f2] & 0b0000_0000_1111_0000) >> 4;
+                      this.s = !!(flags & 0b1000);
+                      this.z = !!(flags & 0b0100);
+                      this.o = !!(flags & 0b0010);
+                      this.c = !!(flags & 0b0001);
+                      break;
+                    }
                     default: {
                       throw new UnreachableCaseError(this.#f1);
                     }
@@ -579,53 +671,40 @@ export class CP1610 implements BusDevice {
                 // Register shift operations break down the opcode differently
                 // so we have special logic for them here:
                 case 0b001: {
-                  // switch (this.#f1) {
-                  //   case 0b000: /* SWAP */ break;
-                  //   case 0b001: /* SLL  */ break;
-                  //   case 0b010: /* RLC  */ break;
-                  //   case 0b011: /* SLLC */ break;
-                  //   case 0b100: /* SLR  */ break;
-                  //   case 0b101: /* SAR  */ break;
-                  //   case 0b110: /* RRC  */ break;
-                  //   case 0b111: /* SARC */ break;
-                  //   default: {
-                  //     throw new UnreachableCaseError(this.#f1);
-                  //   }
-                  // }
                   const i = (0b011 & this.#f2) as Triplet;
                   const rightShift = Boolean(0b100 & this.#f1);
                   const withLinkBits = Boolean(0b010 & this.#f1);
                   const arithmetic = Boolean(0b001 & this.#f1);
                   const shiftTwice = Boolean(0b100 & this.#f2);
 
-                  const carryBit = !withLinkBits
-                    ? 0
-                    : rightShift
-                      ? 0b0000_0000_0000_0001
-                      : 0b1000_0000_0000_0000;
-                  const overflowBit = !shiftTwice
-                    ? 0
-                    : rightShift
-                      ? 0b0000_0000_0000_0010
-                      : 0b0100_0000_0000_0000;
-
-                  this.c = (this.r[i] & carryBit) !== 0;
-                  this.o = (this.r[i] & overflowBit) !== 0;
-
                   if (this.#f1 === 0b000) {
                     // SWAP
+                    const lo = this.r[i] & 0x00ff;
                     if (shiftTwice) {
+                      this.r[i] = lo | (lo << 8);
                     } else {
-                      const lo = this.r[i] & 0x00ff;
                       const hi = this.r[i] & 0xff00;
                       this.r[i] = (hi >> 8) | (lo << 8);
                     }
                   } else {
+                    const carryBit = !withLinkBits
+                      ? 0
+                      : rightShift
+                        ? 0b0000_0000_0000_0001
+                        : 0b1000_0000_0000_0000;
+                    const overflowBit = !shiftTwice
+                      ? 0
+                      : rightShift
+                        ? 0b0000_0000_0000_0010
+                        : 0b0100_0000_0000_0000;
+
+                    this.c = (this.r[i] & carryBit) !== 0;
+                    this.o = (this.r[i] & overflowBit) !== 0;
                     if (rightShift) {
                     }
                   }
 
-                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.s = (this.r[i] & 0b0000_0000_1000_0000) !== 0;
                   this.z = this.r[i] === 0;
 
                   break;
@@ -677,7 +756,6 @@ export class CP1610 implements BusDevice {
             // next by looking at the opcode we just read.
             if (this.opcode === SDBD_OPCODE) {
               this.d = true;
-              this.busSequence = "EXEC_NACT_2";
               break;
             }
 
@@ -815,15 +893,55 @@ export class CP1610 implements BusDevice {
                 this.busSequence = "ADDRESS_INDIRECT_READ_SDBD";
               }
             } else {
-              // prettier-ignore
               switch (this.#operation) {
                 // These indicate single-register operations, which have a
                 // secondary opcode within f1:
                 case 0b000: {
                   switch (this.#f1) {
                     case 0b000: {
-                      // Special case: `0000 000` indicates a jump instruction:
-                      this.busSequence = "JUMP";
+                      // These indicate internal control operations.
+                      //
+                      // With the exception of Jump, all of these are 4-cycle
+                      // operations, which means we need to execute immediately.
+                      switch (this.#f2) {
+                        case 0b100: /* J */ {
+                          // Special case: `0000 000 100` indicates a jump instruction:
+                          this.busSequence = "JUMP";
+                          break;
+                        }
+                        case 0b000: /* HLT */ {
+                          this.halted = true;
+                          break;
+                        }
+                        case 0b001: /* SDBD */ {
+                          // We handle this at the start of the
+                          // `INSTRUCTION_FETCH` case block
+                          break;
+                        }
+                        case 0b010: /* EIS */ {
+                          this.i = true;
+                          break;
+                        }
+                        case 0b011: /* DIS */ {
+                          this.i = false;
+                          break;
+                        }
+                        case 0b101: /* TCI */ {
+                          break;
+                        }
+                        case 0b110: /* CLRC */ {
+                          this.c = false;
+                          break;
+                        }
+                        case 0b111: /* SETC */ {
+                          this.c = true;
+                          break;
+                        }
+
+                        default: {
+                          throw new UnreachableCaseError(this.#f2);
+                        }
+                      }
                       break;
                     }
                     case 0b001: /* INCR */
@@ -832,7 +950,7 @@ export class CP1610 implements BusDevice {
                     case 0b100: /* NEGR */
                     case 0b101: /* ADCR */
                     case 0b110: /* GSWD */
-                    case 0b111: /* RSWD */  {
+                    case 0b111: /* RSWD */ {
                       // All of these operations take up 6 cycles, 4 for
                       // instruction fetch as usual, plus what I *assume* are
                       // two NACTs during execution.
@@ -884,8 +1002,9 @@ export class CP1610 implements BusDevice {
             //     .toString(16)
             //     .padStart(4, "0"),
             // });
-
-            this.d = false;
+            if (this.opcode !== SDBD_OPCODE) {
+              this.d = false;
+            }
 
             break;
           }

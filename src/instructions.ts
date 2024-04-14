@@ -1,4 +1,4 @@
-import { InstructionConfig } from "./InstructionConfig";
+import {InstructionConfig} from "./InstructionConfig";
 
 const instructions: {
   [k: string]: InstructionConfig;
@@ -105,7 +105,11 @@ const instructions: {
     instruction: "Get the Status Word",
     mnemonic: "GSWD",
     cycles: [6],
-    interruptable: true,
+    // Intellivision Wiki docs say this is interruptable, but jzIntv says
+    // otherwise
+    //
+    // interruptable: true,
+    interruptable: false,
     in_s: true,
     in_z: true,
     in_o: true,
@@ -127,7 +131,11 @@ const instructions: {
     instruction: "Return Status Word",
     mnemonic: "RSWD",
     cycles: [6],
-    interruptable: true,
+    // Intellivision Wiki docs say this is interruptable, but jzIntv says
+    // otherwise
+    //
+    // interruptable: true,
+    interruptable: false,
     out_s: true,
     out_z: true,
     out_o: true,

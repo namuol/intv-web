@@ -89,7 +89,7 @@ describe("jzIntv fixtures", async () => {
               // address for the next access.
               if (this.ticks === 3) {
                 if (!this.seenReads.has(this.addr)) {
-                  this.seenReads.add(this.addr);
+                  if (this.addr !== 0x4800) this.seenReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.bus.data,
@@ -108,7 +108,7 @@ describe("jzIntv fixtures", async () => {
               if (this.ticks === 1) {
                 this.data = this.bus.data;
                 if (!this.seenReads.has(this.addr)) {
-                  this.seenReads.add(this.addr);
+                  if (this.addr !== 0x4800) this.seenReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.data,
@@ -221,11 +221,12 @@ describe("jzIntv fixtures", async () => {
         stepCycle = Math.max(0, cycles) / 4;
         log.push(cpuStatus());
 
-        while (cpu.busSequence === "INSTRUCTION_FETCH") {
-          tick();
-        }
-        // @ts-ignore
-        while (cpu.busSequence !== "INSTRUCTION_FETCH") {
+        let fetched = false;
+        cpu.onInstructionFetch = () => {
+          fetched = true;
+        };
+
+        while (!fetched && !cpu.halted) {
           tick();
         }
       };
@@ -295,15 +296,15 @@ describe("jzIntv fixtures", async () => {
               case 0b10: {
                 switch (ff) {
                   case 0b00: {
-                    mnemonic = "JSR,";
+                    mnemonic = "JSR";
                     break;
                   }
                   case 0b01: {
-                    mnemonic = "JSRE ";
+                    mnemonic = "JSRE";
                     break;
                   }
                   case 0b10: {
-                    mnemonic = "JSRD ";
+                    mnemonic = "JSRD";
                     break;
                   }
                 }
@@ -311,9 +312,14 @@ describe("jzIntv fixtures", async () => {
               }
             }
             if (regIndex !== null) {
-              return `${mnemonic}R${regIndex},${$word(addr)}`;
+              return `${mnemonic} R${regIndex},${$word(addr)}`;
             }
             return mnemonic;
+          }
+          case "MVI": {
+            return `${instruction.mnemonic},${$word(
+              peekBus(pc + 1),
+            )},R${reg0Index}`;
           }
           case "MVI@":
           case "MVII": {
@@ -327,7 +333,7 @@ describe("jzIntv fixtures", async () => {
             }
           }
           case "MVO":
-            return `${instruction.mnemonic},R${reg1Index},${$word(
+            return `${instruction.mnemonic} R${reg1Index},${$word(
               peekBus(pc + 1),
             )}`;
           case "MVO@":
@@ -341,7 +347,7 @@ describe("jzIntv fixtures", async () => {
 
           case "MOVR": {
             if (reg1Index === 7) {
-              return `JR,R${reg0Index}`;
+              return `JR R${reg0Index}`;
             } else {
               return `${instruction.mnemonic} R${reg0Index},R${reg1Index}`;
             }
@@ -354,13 +360,12 @@ describe("jzIntv fixtures", async () => {
             return `XORR R${reg0Index}, R${reg1Index}`;
           }
 
-          case "DECR": {
-            return `DECR R${reg1Index}`;
-          }
-
           case "B": {
             const direction = 0b0000_0000_0010_0000 & opcode ? -1 : 1;
-            const addr = pc + (direction * peekBus(pc + 1) + 1);
+            const offset = peekBus(pc + 1);
+            const addr =
+              pc + (direction * offset + 1 + (direction > 0 ? 1 : 0));
+            console.log({pc: word(pc), addr: word(addr), direction, offset});
 
             // prettier-ignore
             const mnemonic = (() => {
@@ -385,19 +390,29 @@ describe("jzIntv fixtures", async () => {
                 case 0b1111: return 'BESC';
               }
             })();
+            if (mnemonic === "B") return `${mnemonic},${$word(addr)}`;
             return `${mnemonic} ${$word(addr)}`;
           }
+          case "SLL":
           case "SWAP": {
-            return `SWAP R${reg1Index}`;
+            if (reg1Index & 0b100) {
+              return `${instruction.mnemonic} R${reg1Index & 0b011},2`;
+            } else {
+              return `${instruction.mnemonic} R${reg1Index & 0b011}`;
+            }
           }
           case "ANDI": {
             const data = cpu.d ? peekBusSDBD(pc + 1) : peekBus(pc + 1);
             return `${instruction.mnemonic} #${$word(data)},R${reg1Index}`;
           }
           case "INCR":
-          case "DECR": {
-            return `${instruction.mnemonic} R${reg0Index}`;
-          }
+          case "DECR":
+          case "COMR":
+          case "NEGR":
+          case "ADCR":
+          case "GSWD":
+          case "RSWD":
+            return `${instruction.mnemonic} R${reg1Index}`;
         }
 
         return instruction.mnemonic;
@@ -407,20 +422,22 @@ describe("jzIntv fixtures", async () => {
         const reg = (n: number) => word(n);
         return `${[...cpu.r]
           .map(reg)
-          .join(" ")} ${cpuFlags()}  ${cpuCurrentInstruction()}|${
+          .join(" ")} ${cpuFlags()}  ${cpuCurrentInstruction()}  ${
           // HACKish cycle count offset
           stepCycle
         }`;
       };
 
-      const normalizeCpuStatus = (line: string) =>
-        line
-          .replace(/  +/g, "|")
-          .split("|")
-          // TODO: It's unclear "when" CPU status is logged in jzIntv so I'm
-          // disabling timing comparisons, for now.
-          .slice(0, -1)
-          .join(",");
+      const normalizeCpuStatus = (line: string) => {
+        if (!line) return line;
+        // Now I've got two problems:
+        const m = line.match(/^\s*(([0-9A-F]+ ){8})((.){8})\s+(.+)\s+(\d+)$/);
+        if (!m)
+          throw new Error('Could not parse CPU status line:\n"' + line + '"');
+        return `${m[1]?.trim()} ${m[3]?.trim()} ${m[5]
+          ?.trim()
+          ?.replaceAll(/\s+/g, " ")}`;
+      };
 
       const normalizeBusStatus = (line: string) => {
         const s = line.split(/ +/g);
@@ -448,13 +465,13 @@ describe("jzIntv fixtures", async () => {
 
       expect(expectedLog.length).toBeGreaterThan(0);
 
-      while (log.length < expectedLog.length) {
+      while (log.length < expectedLog.length && !cpu.halted) {
         step();
       }
 
       const normalizedLog = log.map(normalizeLine);
       const normalizedExpectedLog = expectedLog.map(normalizeLine);
-      for (let i = 0; i < normalizedLog.length; ++i) {
+      for (let i = 0; i < normalizedLog.length; i += 1) {
         const prefixLine = (line: string, j: number) =>
           `${(j + 1).toString(10).padStart(4, " ")}: ` + line;
 
