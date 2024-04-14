@@ -672,13 +672,16 @@ export class CP1610 implements BusDevice {
                 // so we have special logic for them here:
                 case 0b001: {
                   const i = (0b011 & this.#f2) as Triplet;
+                  const r = this.r[i];
                   const rightShift = Boolean(0b100 & this.#f1);
                   const withLinkBits = Boolean(0b010 & this.#f1);
                   const arithmetic = Boolean(0b001 & this.#f1);
                   const shiftTwice = Boolean(0b100 & this.#f2);
 
+                  let signBit;
                   if (this.#f1 === 0b000) {
                     // SWAP
+                    signBit = 0b0000_0000_1000_0000;
                     const lo = this.r[i] & 0x00ff;
                     if (shiftTwice) {
                       this.r[i] = lo | (lo << 8);
@@ -687,24 +690,48 @@ export class CP1610 implements BusDevice {
                       this.r[i] = (hi >> 8) | (lo << 8);
                     }
                   } else {
-                    const carryBit = !withLinkBits
-                      ? 0
-                      : rightShift
+                    const shift = shiftTwice ? 2 : 1;
+                    signBit = rightShift
+                      ? 0b0000_0000_1000_0000
+                      : 0b1000_0000_0000_0000;
+
+                    const c = Number(this.c && !arithmetic);
+                    const o = Number(this.o && !arithmetic);
+
+                    if (withLinkBits) {
+                      const carryBit = rightShift
                         ? 0b0000_0000_0000_0001
                         : 0b1000_0000_0000_0000;
-                    const overflowBit = !shiftTwice
-                      ? 0
-                      : rightShift
-                        ? 0b0000_0000_0000_0010
-                        : 0b0100_0000_0000_0000;
+                      this.c = Boolean(r & carryBit);
+                      if (shiftTwice) {
+                        const overflowBit = rightShift
+                          ? 0b0000_0000_0000_0010
+                          : 0b0100_0000_0000_0000;
+                        this.o = Boolean(r & overflowBit);
+                      }
+                    }
 
-                    this.c = (this.r[i] & carryBit) !== 0;
-                    this.o = (this.r[i] & overflowBit) !== 0;
-                    if (rightShift) {
+                    if (!rightShift) {
+                      this.r[i] =
+                        (r << shift) | (c << (shift - 1)) | (o << (shift - 2));
+                    } else {
+                      if (arithmetic) {
+                        let signBits = 0b1000_0000_0000_0000 & r;
+                        if (shiftTwice) {
+                          signBits |= signBits >> 1;
+                        }
+                        this.r[i] = signBits | (r >> shift);
+                      } else if (withLinkBits) {
+                        this.r[i] =
+                          (r >> shift) |
+                          (c << (16 - shift)) |
+                          (o << (17 - shift));
+                      } else {
+                        this.r[i] = r >> shift;
+                      }
                     }
                   }
-
-                  this.s = (this.r[i] & 0b0000_0000_1000_0000) !== 0;
+                  this.s = (this.r[i] & signBit) !== 0;
                   this.z = this.r[i] === 0;
 
                   break;

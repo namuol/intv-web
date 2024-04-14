@@ -394,6 +394,12 @@ describe("jzIntv fixtures", async () => {
             return `${mnemonic} ${$word(addr)}`;
           }
           case "SLL":
+          case "RLC":
+          case "SLLC":
+          case "SLR":
+          case "SAR":
+          case "RRC":
+          case "SARC":
           case "SWAP": {
             if (reg1Index & 0b100) {
               return `${instruction.mnemonic} R${reg1Index & 0b011},2`;
