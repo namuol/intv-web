@@ -406,4 +406,25 @@ MAIN:
         MVII #$8003, R0     ; Should copy the sign bit twice
         SARC R0, 2
 
+        ;
+        ; MOVR
+        ;
+
+        MVII #$0000, R0         ; Test zero flag
+        MVII #$4242, R1
+        MOVR R0, R1
+
+        MVII #$8000, R0         ; Test sign flag
+        MVII #$4242, R1
+        MOVR R0, R1
+
+        MVII #MOVR_JUMP, R0      
+        JR R0                   ; Test `MOVR R0, R7` alias
+
+        NOP
+        NOP
+        NOP
+
+MOVR_JUMP:
+
         HLT
