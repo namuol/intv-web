@@ -746,12 +746,35 @@ export class CP1610 implements BusDevice {
                   this.z = this.r[i] === 0;
                   break;
                 }
-                case 0b011:
-                  /* ADDR */ break;
-                case 0b100:
-                  /* SUBR */ break;
-                case 0b101:
-                  /* CMPR */ break;
+                case 0b011: /* ADDR */ {
+                  const r1 = this.r[this.#f1];
+                  const r2 = this.r[this.#f2];
+                  const result = r1 + r2;
+                  this.r[this.#f2] = result;
+                  this.c = result > 0xffff;
+                  this.s = (this.r[this.#f2] & 0b1000_0000_0000_0000) !== 0;
+                  this.o =
+                    (0x8000 & r1) === (0x8000 & r2) &&
+                    this.s !== Boolean(0x8000 & r1);
+                  this.z = this.r[this.#f2] === 0;
+                  break;
+                }
+                case 0b100: /* SUBR */ {
+                  const r1 = this.r[this.#f1];
+                  const r2 = this.r[this.#f2];
+                  const result = r2 - r1;
+                  this.r[this.#f2] = result;
+                  this.c = r2 >= r1;
+                  this.s = (this.r[this.#f2] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[this.#f2] === 0;
+                  this.o =
+                    (0x8000 & r1) !== (0x8000 & r2) &&
+                    this.s === Boolean(0x8000 & r1);
+                  break;
+                }
+                case 0b101: /* CMPR */ {
+                  break;
+                }
                 case 0b110: /* ANDR */ {
                   const i = this.#f2;
                   this.r[i] &= this.r[this.#f1];

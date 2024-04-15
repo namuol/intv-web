@@ -407,6 +407,14 @@ describe("jzIntv fixtures", async () => {
               return `${instruction.mnemonic} R${reg1Index & 0b011}`;
             }
           }
+          case "ADDR":
+          case "SUBR":
+          case "CMPR":
+          case "ANDR":
+          case "XORR": {
+            return `${instruction.mnemonic} R${reg0Index},R${reg1Index}`;
+          }
+
           case "ANDI": {
             const data = cpu.d ? peekBusSDBD(pc + 1) : peekBus(pc + 1);
             return `${instruction.mnemonic} #${$word(data)},R${reg1Index}`;
@@ -440,9 +448,11 @@ describe("jzIntv fixtures", async () => {
         const m = line.match(/^\s*(([0-9A-F]+ ){8})((.){8})\s+(.+)\s+(\d+)$/);
         if (!m)
           throw new Error('Could not parse CPU status line:\n"' + line + '"');
-        return `${m[1]?.trim()} ${m[3]?.trim()} ${m[5]
-          ?.trim()
-          ?.replaceAll(/\s+/g, " ")}`;
+        const registers = m[1]?.trim();
+        // Here we slice off the last status flag for now which deals with interrupt status info
+        const flags = m[3]?.trim().slice(0, 7);
+        const disassembly = m[5]?.trim()?.replaceAll(/\s+/g, " ");
+        return `${registers} ${flags} ${disassembly}`;
       };
 
       const normalizeBusStatus = (line: string) => {
