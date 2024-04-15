@@ -17,6 +17,10 @@
         ORG     $4800
 
 MAIN:
+        ;
+        ; CPU Control / Misc
+        ;
+
         EIS                 ; Enable interrupts
         DIS                 ; Enable interrupts
         SDBD                ; Set double byte data
@@ -26,6 +30,85 @@ MAIN:
 
         SETC                ; Set the carry flag
         CLRC                ; Clear the carry flag
+
+        ;
+        ; Jump instructions
+        ;
+
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        J J_DEST
+        HLT
+J_DEST:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JE JE_DEST
+        HLT
+JE_DEST:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JD JD_DEST
+        HLT
+JD_DEST:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSR R4, JSR_DEST_R4
+        HLT
+JSR_DEST_R4:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSR R5, JSR_DEST_R5
+        HLT
+JSR_DEST_R5:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSR R6, JSR_DEST_R6
+        HLT
+JSR_DEST_R6:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRE R4, JSRE_DEST_R4
+        HLT
+JSRE_DEST_R4:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRE R5, JSRE_DEST_R5
+        HLT
+JSRE_DEST_R5:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRE R6, JSRE_DEST_R6
+        HLT
+JSRE_DEST_R6:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRD R4, JSRD_DEST_R4
+        HLT
+JSRD_DEST_R4:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRD R5, JSRD_DEST_R5
+        HLT
+JSRD_DEST_R5:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+
+        JSRD R6, JSRD_DEST_R6
+        HLT
+JSRD_DEST_R6:
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
 
         ;
         ; INCR

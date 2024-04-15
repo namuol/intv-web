@@ -290,31 +290,26 @@ describe("jzIntv fixtures", async () => {
                 break;
               }
             }
-            switch (rr) {
-              case 0b00:
-              case 0b01:
+            
+            if (rr !== 0b11) {
+              mnemonic += "SR";
+            }
+
+            switch (ff) {
+              case 0b01: {
+                mnemonic += "E";
+                break;
+              }
               case 0b10: {
-                switch (ff) {
-                  case 0b00: {
-                    mnemonic = "JSR";
-                    break;
-                  }
-                  case 0b01: {
-                    mnemonic = "JSRE";
-                    break;
-                  }
-                  case 0b10: {
-                    mnemonic = "JSRD";
-                    break;
-                  }
-                }
+                mnemonic += "D";
                 break;
               }
             }
+
             if (regIndex !== null) {
               return `${mnemonic} R${regIndex},${$word(addr)}`;
             }
-            return mnemonic;
+            return `${mnemonic} ${$word(addr)}`;
           }
           case "MVI": {
             return `${instruction.mnemonic},${$word(
@@ -449,8 +444,17 @@ describe("jzIntv fixtures", async () => {
         if (!m)
           throw new Error('Could not parse CPU status line:\n"' + line + '"');
         const registers = m[1]?.trim();
-        // Here we slice off the last status flag for now which deals with interrupt status info
-        const flags = m[3]?.trim().slice(0, 7);
+        // Here we slice off the last two "status flags" for now.
+        //
+        // This ignores:
+        // - Whether the last instruction is interruptable (something that the
+        //   docs and jzIntv often disagree on; although I tend to trust jzIntv
+        //   I want to understand what's going on before I start following its
+        //   lead)
+        // - Interrupt system status. Right now I'm focusing just on basic
+        //   instruction support, and I'll move on to external device support
+        //   once I feel that's in a good enough place.
+        const flags = m[3]?.trim().slice(0, 6);
         const disassembly = m[5]?.trim()?.replaceAll(/\s+/g, " ");
         return `${registers} ${flags} ${disassembly}`;
       };
