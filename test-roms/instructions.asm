@@ -421,9 +421,7 @@ MAIN:
         MVII #MOVR_JUMP, R0      
         JR R0                   ; Test `MOVR R0, R7` alias
 
-        NOP
-        NOP
-        NOP
+        HLT
 
 MOVR_JUMP:
 
@@ -505,6 +503,99 @@ MOVR_JUMP:
         MVII #$8001, R1
         SUBR R0, R1
 
-        NOP
+        ;
+        ; CMPR
+        ;
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$0000, R0         ; Test zero subtraction
+        MVII #$0000, R1
+        CMPR R0, R1
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$0002, R0         ; Test basic subtraction, positive result
+        MVII #$0044, R1
+        CMPR R0, R1
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+        
+        MVII #$0044, R0         ; Test basic subtraction, negative result
+        MVII #$0002, R1
+        CMPR R0, R1
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        ; HACK/Bug in jzIntv?
+        ;
+        ; For some reason when MVIIing $0001 into R0 and R1 back to back like
+        ; this, jzIntv adds an extra bus read of the next program counter before
+        ; logging the instruction and reading the program counter again.
+        ;
+        ; To get around this, I'm loading 2 into each register instead (?!)
+        ; which seems to prevent this behavior.
+        ;
+        ; ```asm
+        ; MVII #$0001, R0         ; Test zero flag
+        ; MVII #$0001, R1
+        ; ```
+
+        MVII #$0002, R0         ; Test zero flag, carry flag
+        MVII #$0002, R1
+        CMPR R0, R1
+        
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$0002, R0         ; Test overflow flag, carry flag
+        MVII #$8001, R1
+        CMPR R0, R1
+
+        ;
+        ; ANDR
+        ;
+        
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$FFFF, R0
+        MVII #$0000, R1
+        ANDR R0, R1             ; Test zero flag
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+        
+        MVII #$8000, R0
+        MVII #$FFFF, R1
+        ANDR R0, R1             ; Test sign flag
+
+        ;
+        ; XORR
+        ;
+        
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$FFFF, R0
+        MVII #$FFFF, R1
+        XORR R0, R1             ; Test zero flag
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$8000, R0
+        MVII #$0000, R1
+        XORR R0, R1             ; Test sign flag
+
+        MVII #$0000, R0         ; Clear flags
+        RSWD R0
+
+        MVII #$ABCD, R0
+        CLRR R0                 ; Test CLRR alias
 
         HLT

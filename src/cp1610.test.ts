@@ -357,7 +357,7 @@ describe("jzIntv fixtures", async () => {
             if (reg0Index === reg1Index) {
               return `CLRR R${reg0Index}`;
             }
-            return `XORR R${reg0Index}, R${reg1Index}`;
+            return `XORR R${reg0Index},R${reg1Index}`;
           }
 
           case "B": {
