@@ -896,6 +896,39 @@ MVI_AT_END:
         MVII #$FFFF, R1
         ADDI #$0001, R1
 
+        ;
+        ; SUB
+        ;
+
+        CLRR R0                 ; Test zero subtraction
+        MVO R0, $0200
+        CLRR R1
+        RSWD R1                 ; Clear flags
+        SUB $0200, R1
+
+        MVII #$0002, R0         ; Test basic subtraction, positive result
+        MVO R0, $0200
+        MVII #$0044, R1
+        CLRR R2
+        RSWD R2
+        SUB $0200, R1
+        
+        MVII #$0044, R0         ; Test basic subtraction, negative result
+        MVO R0, $0200
+        MVII #$0002, R1
+        CLRR R2
+        RSWD R2                 ; Clear flags
+        SUB $0200, R1
+
+        ; Test overflow flag, carry flag
+
+        MVII #$0002, R0         
+        MVO R0, $0200
+        MVII #$8001, R1
+        CLRR R0
+        RSWD R0
+        SUB $0200, R1
+
 MAIN_END:
 
         HLT
