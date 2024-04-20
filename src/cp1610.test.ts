@@ -620,6 +620,12 @@ describe("jzIntv fixtures", async () => {
           case "RSWD":
             return `${instruction.mnemonic} R${reg1Index}`;
 
+          case "ADDI": {
+            return `${instruction.mnemonic} #${$word(peekBus(pc + 1))},R${reg1Index}`;
+          }
+          case "ADD@": {
+            return `${instruction.mnemonic} R${reg0Index},R${reg1Index}`;
+          }
           case "ADD": {
             const addr = peekBus(pc + 1);
             return `${instruction.mnemonic} ${$word(addr)},R${reg1Index}`;

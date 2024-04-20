@@ -821,8 +821,80 @@ MVI_AT_END:
         MVO R0, $0200
         ADD $0200, R1
 
-        NOP
-        
+        ;
+        ; ADD@
+        ;
+
+        JSR R4, CLEAR_MEM
+        JSR R4, CLEAR_R0_THRU_R6
+        CLRR R4
+        CLRR R1     ; Clear flags
+        RSWD R1
+
+        INCR R0                 ; Set R0 to 1; MVII #$0001, R0 behaves funkily
+        MVII #$0002, R1         ; We are going to add 2 to R0
+        MVO R1, $0200
+        MVII #$0200, R1
+        ADD@ R1, R0
+
+        ; Test zero flag
+        CLRR R0
+        CLRR R1                 ; Clear flags
+        RSWD R1
+        MVO R1, $0200
+        MVII #$0200, R1
+        ADD@ R1, R0
+
+        ; Test sign & overflow flag
+
+        MVII #$7FFF, R2         ; Set $0200 to $7FFF
+        MVO R2, $0200
+        CLRR R0                 ; Set R0 to 1
+        INCR R0
+        CLRR R2                 ; Clear flags
+        RSWD R2
+
+        MVII #$0200, R1         ; Add data at $0200 to R0
+        ADD@ R1, R0
+
+        ; Test carry flag
+        MVII #$FFFF, R2         ; Set $0200 to $FFFF
+        MVO R2, $0200
+        CLRR R0
+        INCR R0
+
+        CLRR R2
+        RSWD R2
+
+        MVII #$0200, R1
+        ADD@ R1, R0
+
+        ;
+        ; ADDI
+        ;
+
+        CLRR R2
+        RSWD R2
+        MVII #$0002, R1
+        ADDI #$0001, R1
+
+        ; Test zero flag
+        CLRR R2
+        RSWD R2
+        MVII #$0000, R1
+        ADDI #$0000, R1
+
+        ; Test sign & overflow flag
+        CLRR R2
+        RSWD R2
+        MVII #$7FFF, R1
+        ADDI #$0001, R1
+
+        ; Test carry flag
+        CLRR R2
+        RSWD R2
+        MVII #$FFFF, R1
+        ADDI #$0001, R1
 
 MAIN_END:
 
