@@ -720,7 +720,7 @@ MOVR_JUMP:
         MVO@ R0, R6
 
         ;
-        ; MVOI
+        ; MVOI aka MVO@ Rx, R7
         ;
         
         ; FIXME:
@@ -758,11 +758,24 @@ MVI_END:
         JSR R4, CLEAR_MEM
         JSR R4, CLEAR_R0_THRU_R6
         CLRR R4
-        MVII #$4242, R0
+        MVII #MVI_AT_END, R0
         MVO R0, $0200
         MVII #$0200, R1
+        CLRR R0
 
+        MVI@ R1, R0
         MVI@ R1, R2
+        MVI@ R1, R3
+        MVI@ R1, R4
+        MVI@ R1, R5
+        MVI@ R1, R6
+        MVI@ R1, R7
+
+        NOP
+
+MVI_AT_END:
+
+        MVI@ R1, R1
 
         HLT
 

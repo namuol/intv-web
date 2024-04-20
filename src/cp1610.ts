@@ -1042,7 +1042,7 @@ export class CP1610 implements BusDevice {
                 }
               }
             }
-            if ((this.r[7] - 1) === 0x4aa5) {
+            if ((this.r[7] - 2) === 0x4A81) {
               trace("DECODED INSTRUCTION", {
                 opcode: this.opcode.toString(16).padStart(4, "0"),
                 external: this.#external,
