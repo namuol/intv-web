@@ -762,7 +762,6 @@ MVI_END:
         MVO R0, $0200
         MVII #$0200, R1
 
-        ; FIXME:
         MVI@ R1, R2
 
         HLT
