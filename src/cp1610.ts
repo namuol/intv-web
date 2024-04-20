@@ -487,6 +487,17 @@ export class CP1610 implements BusDevice {
                   break;
                 }
                 case ADD: {
+                  const i = this.#f2;
+                  const r1 = this.#dtbData;
+                  const r2 = this.r[i];
+                  const result = r1 + r2;
+                  this.r[i] = result;
+                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
+                  this.z = this.r[i] === 0;
+                  this.o =
+                    (0x8000 & r1) === (0x8000 & r2) &&
+                    this.s !== Boolean(0x8000 & r1);
+                  this.c = result > 0xffff;
                   break;
                 }
                 case SUB: {
@@ -1042,7 +1053,7 @@ export class CP1610 implements BusDevice {
                 }
               }
             }
-            if ((this.r[7] - 2) === 0x4A81) {
+            if (false) {
               trace("DECODED INSTRUCTION", {
                 opcode: this.opcode.toString(16).padStart(4, "0"),
                 external: this.#external,

@@ -1,3 +1,6 @@
 1k.jzintv-script
 *.rom
 *.lst
+*.cpu
+*.hst
+*.mem

@@ -35,79 +35,79 @@ MAIN:
         ; Jump instructions
         ;
 
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         J J_DEST
         HLT
 J_DEST:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JE JE_DEST
         HLT
 JE_DEST:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JD JD_DEST
         HLT
 JD_DEST:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSR R4, JSR_DEST_R4
         HLT
 JSR_DEST_R4:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSR R5, JSR_DEST_R5
         HLT
 JSR_DEST_R5:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSR R6, JSR_DEST_R6
         HLT
 JSR_DEST_R6:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRE R4, JSRE_DEST_R4
         HLT
 JSRE_DEST_R4:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRE R5, JSRE_DEST_R5
         HLT
 JSRE_DEST_R5:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRE R6, JSRE_DEST_R6
         HLT
 JSRE_DEST_R6:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRD R4, JSRD_DEST_R4
         HLT
 JSRD_DEST_R4:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRD R5, JSRD_DEST_R5
         HLT
 JSRD_DEST_R5:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         JSRD R6, JSRD_DEST_R6
         HLT
 JSRD_DEST_R6:
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
 
         ;
@@ -160,7 +160,7 @@ JSRD_DEST_R6:
         ; NEGR
         ;
 
-        MVII #$0000, R0     ; Set up a test for carry flag
+        CLRR R0     ; Set up a test for carry flag
         NEGR R0             ; Negate register 0
         MVII #$8000, R0     ; Set up a test for overflow flag
         NEGR R0             ; Negate register 0
@@ -181,7 +181,7 @@ JSRD_DEST_R6:
         ADCR R0             ; Add carry to register 0
         GSWD R1             ; Get flags
 
-        MVII #$0000, R0     ; Set up a test for carry flag
+        CLRR R0     ; Set up a test for carry flag
         SETC                ; Set carry flag to test set behavior
         ADCR R0             ; Add carry to register 0
         GSWD R1             ; Get flags
@@ -223,37 +223,37 @@ JSRD_DEST_R6:
 
         MVII #$00F0, R0     ; Set all flags on pattern in register 0
         RSWD R0             ; Test RSWD
-        MVII #$0000, R0     ; Clear all flags on pattern in register 0
+        CLRR R0             ; Clear all flags on pattern in register 0
         RSWD R0             ; Test RSWD
 
         MVII #$00F0, R1     ; Set all flags on pattern in register 1
         RSWD R1             ; Test RSWD
-        MVII #$0000, R1     ; Clear all flags on pattern in register 1
+        CLRR R1             ; Clear all flags on pattern in register 1
         RSWD R1             ; Test RSWD
 
         MVII #$00F0, R2     ; Set all flags on pattern in register 2
         RSWD R2             ; Test RSWD
-        MVII #$0000, R2     ; Clear all flags on pattern in register 2
+        CLRR R2             ; Clear all flags on pattern in register 2
         RSWD R2             ; Test RSWD
 
         MVII #$00F0, R3     ; Set all flags on pattern in register 3
         RSWD R3             ; Test RSWD
-        MVII #$0000, R3     ; Clear all flags on pattern in register 3
+        CLRR R3             ; Clear all flags on pattern in register 3
         RSWD R3             ; Test RSWD
 
         MVII #$00F0, R4     ; Set all flags on pattern in register 4
         RSWD R4             ; Test RSWD
-        MVII #$0000, R4     ; Clear all flags on pattern in register 4
+        CLRR R4             ; Clear all flags on pattern in register 4
         RSWD R4             ; Test RSWD
 
         MVII #$00F0, R5     ; Set all flags on pattern in register 5
         RSWD R5             ; Test RSWD
-        MVII #$0000, R5     ; Clear all flags on pattern in register 5
+        CLRR R5             ; Clear all flags on pattern in register 5
         RSWD R5             ; Test RSWD
 
         MVII #$00F0, R6     ; Set all flags on pattern in register 6
         RSWD R6             ; Test RSWD
-        MVII #$0000, R6     ; Clear all flags on pattern in register 6
+        CLRR R6             ; Clear all flags on pattern in register 6
         RSWD R6             ; Test RSWD
 
         ;
@@ -301,7 +301,7 @@ JSRD_DEST_R6:
         CLRC                ; Ensure carry flag is unset
         RLC R0              ; Shift left
 
-        MVII #$0000, R1     ; Clear all flags (carry and overflow)
+        CLRR R1             ; Clear all flags (carry and overflow)
         RSWD R1             ;
         RLC R0, 2           ; Shift left twice
 
@@ -326,12 +326,12 @@ JSRD_DEST_R6:
         RLC R0              ; Test shift zero flag
 
         MVII #$2000, R0     
-        MVII #$0000, R1     ; Clear all flags (carry and overflow)
+        CLRR R1             ; Clear all flags (carry and overflow)
         RSWD R1             ;
         RLC R0, 2           ; Test double shift sign flag
 
         MVII #$4000, R0     
-        MVII #$0000, R1     ; Clear all flags (carry and overflow)
+        CLRR R1             ; Clear all flags (carry and overflow)
         RSWD R1             ;
         RLC R0, 2           ; Test double shift zero flag
 
@@ -348,7 +348,7 @@ JSRD_DEST_R6:
         ;
         ; SLLC
         ;
-        MVII #$0000, R1     ; Clear flags
+        CLRR R1     ; Clear flags
         RSWD R1
 
         MVII #$0001, R0
@@ -411,56 +411,56 @@ JSRD_DEST_R6:
         ; RRC
         ;
 
-        MVII #$0000, R1     ; Set no flags
+        CLRR R1     ; Set no flags
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0              ; Should copy 0 into leftmost bit
 
-        MVII #$0000, R1     ; Set no flags
+        CLRR R1     ; Set no flags
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0, 2           ; Should copy 00 into leftmost bits
 
 
         MVII #$0010, R1     ; Set just carry flag
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0              ; Should copy 1 into leftmost bit
 
         MVII #$0010, R1     ; Set just carry flag
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0, 2           ; Should copy 01 into leftmost bits
 
 
         MVII #$0020, R1     ; Set just overflow flag
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0              ; Should copy 0 into leftmost bit
 
         MVII #$0020, R1     ; Set just overflow flag
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0, 2           ; Should copy 10 into leftmost bits
 
 
         MVII #$0030, R1     ; Set both overflow and carry flags
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0              ; Should copy 1 into leftmost bit
 
         MVII #$0030, R1     ; Set both overflow and carry flags
         RSWD R1
-        MVII #$0000, R0
+        CLRR R0
         RRC R0, 2           ; Should copy 11 into leftmost bits
 
 
-        MVII #$0000, R1     ; Clear flags
+        CLRR R1     ; Clear flags
         RSWD R1
         MVII #$0100, R0     ; Shift right, test sign flag
         RRC R0
 
-        MVII #$0000, R1     ; Clear flags
+        CLRR R1     ; Clear flags
         RSWD R1
         MVII #$0200, R0     ; Shift right twice, test sign flag
         RRC R0, 2
@@ -479,12 +479,12 @@ JSRD_DEST_R6:
         MVII #$8000, R0     ; Should copy the sign bit twice
         SARC R0, 2
 
-        MVII #$0000, R1     ; Should set the carry flag
+        CLRR R1     ; Should set the carry flag
         RSWD R1
         MVII #$8001, R0     ; Should copy the sign bit
         SARC R0
 
-        MVII #$0000, R1     ; Should set the carry and overflow flags
+        CLRR R1     ; Should set the carry and overflow flags
         RSWD R1
         MVII #$8003, R0     ; Should copy the sign bit twice
         SARC R0, 2
@@ -493,7 +493,7 @@ JSRD_DEST_R6:
         ; MOVR
         ;
 
-        MVII #$0000, R0         ; Test zero flag
+        CLRR R0                 ; Test zero flag
         MVII #$4242, R1
         MOVR R0, R1
 
@@ -512,21 +512,21 @@ MOVR_JUMP:
         ; ADDR
         ;
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
-        MVII #$0000, R0
-        MVII #$0000, R1
+        CLRR R0
+        CLRR R1
         ADDR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$7FFF, R0         ; Test overflow
         MVII #$0001, R1
         ADDR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$FFFF, R0         ; Test carry
@@ -537,28 +537,28 @@ MOVR_JUMP:
         ; SUBR
         ;
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
-        MVII #$0000, R0         ; Test zero subtraction
-        MVII #$0000, R1
+        CLRR R0                 ; Test zero subtraction
+        CLRR R1
         SUBR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$0002, R0         ; Test basic subtraction, positive result
         MVII #$0044, R1
         SUBR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         
         MVII #$0044, R0         ; Test basic subtraction, negative result
         MVII #$0002, R1
         SUBR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         ; HACK/Bug in jzIntv?
@@ -579,7 +579,7 @@ MOVR_JUMP:
         MVII #$0002, R1
         SUBR R0, R1
         
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$0002, R0         ; Test overflow flag, carry flag
@@ -590,28 +590,28 @@ MOVR_JUMP:
         ; CMPR
         ;
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
-        MVII #$0000, R0         ; Test zero subtraction
-        MVII #$0000, R1
+        CLRR R0                 ; Test zero subtraction
+        CLRR R1
         CMPR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$0002, R0         ; Test basic subtraction, positive result
         MVII #$0044, R1
         CMPR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         
         MVII #$0044, R0         ; Test basic subtraction, negative result
         MVII #$0002, R1
         CMPR R0, R1
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         ; HACK/Bug in jzIntv?
@@ -632,7 +632,7 @@ MOVR_JUMP:
         MVII #$0002, R1
         CMPR R0, R1
         
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$0002, R0         ; Test overflow flag, carry flag
@@ -643,14 +643,14 @@ MOVR_JUMP:
         ; ANDR
         ;
         
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$FFFF, R0
-        MVII #$0000, R1
+        CLRR R1
         ANDR R0, R1             ; Test zero flag
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         
         MVII #$8000, R0
@@ -661,21 +661,21 @@ MOVR_JUMP:
         ; XORR
         ;
         
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$FFFF, R0
         MVII #$FFFF, R1
         XORR R0, R1             ; Test zero flag
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$8000, R0
-        MVII #$0000, R1
+        CLRR R1
         XORR R0, R1             ; Test sign flag
 
-        MVII #$0000, R0         ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
 
         MVII #$ABCD, R0
@@ -752,7 +752,7 @@ MVI_END:
         ; MVI@
         ;
 
-        MVII #$0000, R0     ; Clear flags
+        CLRR R0     ; Clear flags
         RSWD R0
         
         JSR R4, CLEAR_MEM
@@ -776,6 +776,55 @@ MVI_END:
 MVI_AT_END:
 
         MVI@ R1, R1
+
+        ;
+        ; MVII
+        ;
+
+        ; We have enough tests of MVII elsewhere
+
+        ;
+        ; ADD
+        ;
+
+        ; Basic test
+        JSR R4, CLEAR_MEM
+        JSR R4, CLEAR_R0_THRU_R6
+        CLRR R4
+
+        INCR R1                 ; Set R1 to 1; MVII #$0001, R1 behaves funkily
+        MVII #$0002, R0         ; We are going to add 2 to R1
+        MVO R0, $0200
+        ADD $0200, R1
+
+        ; Test zero flag
+        CLRR R1
+        CLRR R0     ; Clear flags
+        RSWD R0
+        MVO R0, $0200
+        ADD $0200, R1
+
+        ; Test sign & overflow flag
+
+        MVII #$7FFF, R1
+        CLRR R0     ; Clear flags
+        RSWD R0
+        INCR R0
+        MVO R0, $0200
+        ADD $0200, R1
+
+        ; Test carry flag
+        MVII #$FFFF, R1
+        CLRR R0     ; Clear flags
+        RSWD R0
+        INCR R0
+        MVO R0, $0200
+        ADD $0200, R1
+
+        NOP
+        
+
+MAIN_END:
 
         HLT
 
