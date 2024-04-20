@@ -681,4 +681,130 @@ MOVR_JUMP:
         MVII #$ABCD, R0
         CLRR R0                 ; Test CLRR alias
 
+        ;
+        ; MVO
+        ;
+
+        JSR R4, CLEAR_R0_THRU_R6
+        JSR R4, WRITE_R0_THRU_R6
+        MVII #$4242, R4
+
+        MVO R0, $0200
+        MVO R1, $0201
+        MVO R2, $0202
+        MVO R3, $0203
+        MVO R4, $0204
+        MVO R5, $0205
+        MVO R6, $0206
+        MVO R7, $0207
+
+        ;
+        ; MVO@
+        ;
+
+        JSR R4, CLEAR_MEM
+        MVII #$4242, R0
+        MVII #$0200, R1
+        MVII #$0201, R2
+        MVII #$0202, R3
+        MVII #$0203, R4
+        MVII #$0204, R5
+        MVII #$0205, R6
+        MVO@ R0, R1
+        MVO@ R0, R2
+        MVO@ R0, R3
+        MVO@ R0, R4
+        MVO@ R0, R5
+        MVO@ R0, R6
+        MVO@ R0, R6
+        MVO@ R0, R6
+
+        ;
+        ; MVOI
+        ;
+        
+        ; FIXME:
+        ;MVOI R0, #$1234
+
+        ;
+        ; MVI
+        ;
+
+        JSR R4, CLEAR_R0_THRU_R6
+        CLRR R4
+        MVI $0200, R0
+        MVI $0200, R0
+        MVI $0201, R1
+        MVI $0202, R2
+        MVI $0203, R3
+        MVI $0204, R4
+        MVI $0205, R5
+        MVI $0206, R6
+
+        MVII #MVI_END, R0
+        MVO R0, $207
+
+        MVI $0207, R7
+
+MVI_END:
+
+        ;
+        ; MVI@
+        ;
+
+        MVII #$0000, R0     ; Clear flags
+        RSWD R0
+        
+        JSR R4, CLEAR_MEM
+        JSR R4, CLEAR_R0_THRU_R6
+        CLRR R4
+        MVII #$4242, R0
+        MVO R0, $0200
+        MVII #$0200, R1
+
+        ; FIXME:
+        MVI@ R1, R2
+
+        HLT
+
+WRITE_R0_THRU_R6:
+        MVII #$4242, R0
+        MVII #$4242, R1
+        MVII #$4242, R2
+        MVII #$4242, R3
+                                ; Skip R4 since it's our return addr
+        MVII #$4242, R5
+        MVII #$4242, R6
+        JR R4
+        HLT
+
+CLEAR_R0_THRU_R6:
+        CLRR R0
+        CLRR R1
+        CLRR R2
+        CLRR R3
+                                ; Skip R4 since it's our return addr
+        CLRR R5
+        CLRR R6
+        JR R4
+        HLT
+
+CLEAR_MEM:
+        CLRR R0
+        MVO R0, $0200
+        MVO R0, $0201
+        MVO R0, $0202
+        MVO R0, $0203
+        MVO R0, $0204
+        MVO R0, $0205
+        MVO R0, $0206
+        MVO R0, $0207
+        MVO R0, $0208
+        MVO R0, $0209
+        MVO R0, $020A
+        MVO R0, $020C
+        MVO R0, $020D
+        MVO R0, $020E
+        MVO R0, $020F
+        JR R4
         HLT

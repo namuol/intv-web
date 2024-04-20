@@ -6,13 +6,13 @@
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {Bus, BusFlags, BusDevice} from "./Bus";
 
-// let totalLogs = 0;
-// const trace = (..._: any[]) => {
-//   if (totalLogs < 59) {
-//     console.error(..._);
-//     totalLogs += 1;
-//   }
-// };
+let totalLogs = 0;
+const trace = (..._: any[]) => {
+  if (totalLogs < 400) {
+    console.error(..._);
+    totalLogs += 1;
+  }
+};
 
 /**
  * Each micro-cycle (m-cycle) is divided into four time slots, which the CPU and
@@ -1042,17 +1042,21 @@ export class CP1610 implements BusDevice {
                 }
               }
             }
-
-            // trace("DECODED INSTRUCTION", {
-            //   opcode: this.opcode.toString(16).padStart(4, "0"),
-            //   external: this.#external,
-            //   operation: this.#operation.toString(2).padStart(3, "0"),
-            //   f1: this.#f1.toString(2).padStart(3, "0"),
-            //   f2: this.#f2.toString(2).padStart(3, "0"),
-            //   effectiveAddress: this.#effectiveAddress
-            //     .toString(16)
-            //     .padStart(4, "0"),
-            // });
+            if ((this.r[7] - 1) === 0x4aa5) {
+              trace("DECODED INSTRUCTION", {
+                opcode: this.opcode.toString(16).padStart(4, "0"),
+                external: this.#external,
+                operation: this.#operation.toString(2).padStart(3, "0"),
+                f1: this.#f1.toString(2).padStart(3, "0"),
+                f2: this.#f2.toString(2).padStart(3, "0"),
+                effectiveAddress: this.#effectiveAddress
+                  .toString(16)
+                  .padStart(4, "0"),
+                busSequence: this.busSequence,
+                busSequenceIndex: this.busSequenceIndex,
+                bus: this.bus.toString(),
+              });
+            }
             if (this.opcode !== SDBD_OPCODE) {
               this.d = false;
             }

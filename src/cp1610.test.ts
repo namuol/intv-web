@@ -45,15 +45,34 @@ describe("jzIntv fixtures", async () => {
         /**
          * HACK
          *
-         * Reads never seem to be logged twice in jzIntv's debugger output, so
-         * I'm only logging them the first time by tracking which addresses
-         * we've seen already.
+         * Reads ~never~ rarely seem to be logged twice in jzIntv's debugger
+         * output, so I'm only logging them the first time by tracking which
+         * addresses we've seen already.
          *
          * This could easily be a coincidence since I'm only looking at the
          * first 1000 steps of a program, but for now this allows me to progress
          * as it seems to lead to valid output.
+         *
+         * This seems to be true for all addresses after we leave the EXEC ROM,
+         * but we still see two reads of $4800 in the log which are definitely
+         * in ROM.
+         *
+         * Looking at the jzIntv source code, it appears there are two main
+         * conditions that prevent the read from being logged:
+         *
+         * 1. The peripheral "requesting" the read is the same as the peripheral
+         *    handling the read.
+         * 2. The `debug->show_rd` flag is not set.
+         *
+         * The logic that controls `show_rd` is somewhat convoluted, so trying
+         * to understand that might be tricky. However we may not need to, if we
+         * can force the `WATCHING(a,r)` condition to be true which overrides
+         * this flag.
+         *
+         * We might be able to manually watch ALL addresses in the valid range
+         * to force all reads to be logged at all times...
          */
-        seenReads = new Set<number>();
+        cachedReads = new Set<number>();
         onBusActivity: (logLine: string) => void;
 
         constructor(bus: Bus, onBusActivity: (logLine: string) => void) {
@@ -88,8 +107,8 @@ describe("jzIntv fixtures", async () => {
               // currently addressed device to inform the rest of the machine of the
               // address for the next access.
               if (this.ticks === 3) {
-                if (!this.seenReads.has(this.addr)) {
-                  if (this.addr !== 0x4800) this.seenReads.add(this.addr);
+                if (!this.cachedReads.has(this.addr)) {
+                  if (!this.addrIsInRAM()) this.cachedReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.bus.data,
@@ -107,8 +126,8 @@ describe("jzIntv fixtures", async () => {
               // then reads this data.
               if (this.ticks === 1) {
                 this.data = this.bus.data;
-                if (!this.seenReads.has(this.addr)) {
-                  if (this.addr !== 0x4800) this.seenReads.add(this.addr);
+                if (!this.cachedReads.has(this.addr)) {
+                  if (!this.addrIsInRAM()) this.cachedReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.data,
@@ -177,6 +196,10 @@ describe("jzIntv fixtures", async () => {
               throw new UnreachableCaseError(this.bus.flags);
             }
           }
+        }
+
+        addrIsInRAM(): boolean {
+          return this.addr <= 0x1000 || this.addr === 0x4800;
         }
 
         debug_read(_addr: number): number | null {
@@ -290,7 +313,7 @@ describe("jzIntv fixtures", async () => {
                 break;
               }
             }
-            
+
             if (rr !== 0b11) {
               mnemonic += "SR";
             }
@@ -312,9 +335,9 @@ describe("jzIntv fixtures", async () => {
             return `${mnemonic} ${$word(addr)}`;
           }
           case "MVI": {
-            return `${instruction.mnemonic},${$word(
+            return `${instruction.mnemonic} ${$word(
               peekBus(pc + 1),
-            )},R${reg0Index}`;
+            )},R${reg1Index}`;
           }
           case "MVI@":
           case "MVII": {
@@ -335,6 +358,10 @@ describe("jzIntv fixtures", async () => {
           case "MVOI": {
             if (reg0Index === 6) {
               return `PSHR R${reg1Index}`;
+            } else if (reg0Index === 7) {
+              return `${instruction.mnemonic} R${reg1Index},#${$word(
+                peekBus(pc + 1),
+              )}`;
             } else {
               return `${instruction.mnemonic} R${reg1Index},R${reg0Index}`;
             }
@@ -491,12 +518,21 @@ describe("jzIntv fixtures", async () => {
 
       const normalizedLog = log.map(normalizeLine);
       const normalizedExpectedLog = expectedLog.map(normalizeLine);
-      for (let i = 0; i < normalizedLog.length; i += 1) {
+      const extraLines = 5;
+      for (let i = 1; i < normalizedLog.length; i += 1) {
         const prefixLine = (line: string, j: number) =>
-          `${(j + 1).toString(10).padStart(4, " ")}: ` + line;
+          `${(i + j + 1 - extraLines).toString(10).padStart(4, " ")}: ` + line;
 
-        expect(normalizedLog.slice(0, i).map(prefixLine).join("\n")).toEqual(
-          normalizedExpectedLog.slice(0, i).map(prefixLine).join("\n"),
+        expect(
+          normalizedLog
+            .slice(i - extraLines, i)
+            .map(prefixLine)
+            .join("\n"),
+        ).toEqual(
+          normalizedExpectedLog
+            .slice(i - extraLines, i)
+            .map(prefixLine)
+            .join("\n"),
         );
       }
     });
