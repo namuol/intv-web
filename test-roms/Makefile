@@ -7,7 +7,7 @@ LOGS = $(SOURCES:.asm=.jzintv.txt)
 all: $(BINS) $(CFGS) $(LOGS)
 
 # "Script" that runs 1000 steps of the emulator, then quits.
-1k.jzintv-script:
+1k.jzintv-script: Makefile
 	echo "x" > $@
 	for i in $$(seq 1 1000); do echo "s"; done >> $@
 	echo "q" >> $@

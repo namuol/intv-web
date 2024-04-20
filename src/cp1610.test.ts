@@ -71,8 +71,12 @@ describe("jzIntv fixtures", async () => {
          *
          * We might be able to manually watch ALL addresses in the valid range
          * to force all reads to be logged at all times...
+         *
+         * I attempted to issue `w 0 ffff` and `@ 0 ffff` commands to watch
+         * reads/writes on the full 16 bit address range, but this didn't change
+         * anything.
          */
-        cachedReads = new Set<number>();
+        seenReads = new Set<number>();
         onBusActivity: (logLine: string) => void;
 
         constructor(bus: Bus, onBusActivity: (logLine: string) => void) {
@@ -107,8 +111,8 @@ describe("jzIntv fixtures", async () => {
               // currently addressed device to inform the rest of the machine of the
               // address for the next access.
               if (this.ticks === 3) {
-                if (!this.cachedReads.has(this.addr)) {
-                  if (!this.addrIsInRAM()) this.cachedReads.add(this.addr);
+                if (!this.seenReads.has(this.addr)) {
+                  if (!this.addrIsInRAM()) this.seenReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.bus.data,
@@ -126,8 +130,8 @@ describe("jzIntv fixtures", async () => {
               // then reads this data.
               if (this.ticks === 1) {
                 this.data = this.bus.data;
-                if (!this.cachedReads.has(this.addr)) {
-                  if (!this.addrIsInRAM()) this.cachedReads.add(this.addr);
+                if (!this.seenReads.has(this.addr)) {
+                  if (!this.addrIsInRAM()) this.seenReads.add(this.addr);
                   this.onBusActivity(
                     `RD a=${$word(this.addr)} d=${word(
                       this.data,
@@ -199,7 +203,12 @@ describe("jzIntv fixtures", async () => {
         }
 
         addrIsInRAM(): boolean {
-          return this.addr <= 0x1000 || this.addr === 0x4800;
+          return (
+            this.addr <= 0x1000 ||
+            // DOUBLE HACK: Not sure why but we print reads of $4800 multiple times
+            // early in the program unlike most other ROM addresses:
+            this.addr === 0x4800
+          );
         }
 
         debug_read(_addr: number): number | null {
