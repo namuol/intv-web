@@ -561,7 +561,7 @@ describe("jzIntv fixtures", async () => {
 
             // prettier-ignore
             const mnemonic = (() => {
-              if (opcode === 0x020F || opcode === 0x022F) {
+              if ((opcode >= 0x0210 && opcode <= 0x021F) || (opcode >= 0x0230 && opcode <= 0x023F)) {
                 return'BEXT';
               }
               switch (0b0000_0000_0000_1111 & opcode) {
@@ -569,6 +569,7 @@ describe("jzIntv fixtures", async () => {
                 case 0b0001: return 'BC';
                 case 0b0010: return 'BOV';
                 case 0b0011: return 'BPL';
+                case 0b0100: return 'BEQ';
                 case 0b0101: return 'BLT';
                 case 0b0110: return 'BLE';
                 case 0b0111: return 'BUSC';
@@ -582,7 +583,8 @@ describe("jzIntv fixtures", async () => {
                 case 0b1111: return 'BESC';
               }
             })();
-            if (mnemonic === "B") return `${mnemonic},${$word(addr)}`;
+            if (mnemonic === "B") return `${mnemonic} ${$word(addr)}`;
+            if (mnemonic === "NOPP") return "NOPP";
             return `${mnemonic} ${$word(addr)}`;
           }
           case "SLL":
@@ -713,21 +715,28 @@ describe("jzIntv fixtures", async () => {
 
       const normalizedLog = log.map(normalizeLine);
       const normalizedExpectedLog = expectedLog.map(normalizeLine);
-      const extraLines = 5;
-      for (let i = 1; i < normalizedLog.length; i += 1) {
+      const extraLines = 40;
+      for (let i = 1; i < normalizedLog.length; i += extraLines) {
         const prefixLine = (line: string, j: number) =>
           `${(i + j + 1 - extraLines).toString(10).padStart(4, " ")}: ` + line;
-
+        const lineNumberStr = prefixLine("", 0);
+        const space = lineNumberStr.replaceAll(/./g, " ");
         expect(
-          normalizedLog
-            .slice(i - extraLines, i)
-            .map(prefixLine)
-            .join("\n"),
+          lineNumberStr +
+            normalizedLog[i - extraLines] +
+            "\n" +
+            normalizedLog
+              .slice(i - extraLines + 1, i)
+              .map((x) => space + x)
+              .join("\n"),
         ).toEqual(
-          normalizedExpectedLog
-            .slice(i - extraLines, i)
-            .map(prefixLine)
-            .join("\n"),
+          lineNumberStr +
+            normalizedExpectedLog[i - extraLines] +
+            "\n" +
+            normalizedExpectedLog
+              .slice(i - extraLines + 1, i)
+              .map((x) => space + x)
+              .join("\n"),
         );
       }
     });

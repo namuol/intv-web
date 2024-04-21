@@ -675,6 +675,338 @@ MOVR_JUMP:
         CLRR R0                 ; Test CLRR alias
 
         ;
+        ; Branch instructions
+        ;
+
+        CLRR R0
+        RSWD R0
+        B B_DEST
+        HLT
+B_DEST:
+        CLRR R0
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BC BC_DEST              ; Non-branching condition
+
+        MVII #$0010, R0         ; Set the carry flag
+        RSWD R0
+        BC BC_DEST              ; Should branch
+        HLT
+BC_DEST:
+        CLRR R0
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BOV BOV_DEST            ; Non-branching condition
+
+        MVII #$0020, R0         ; Set the overflow flag
+        RSWD R0
+        BOV BOV_DEST            ; Should branch
+        HLT
+BOV_DEST:
+        MVII #$0080, R0         ; Set the sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BPL BPL_DEST            ; Non-branching condition
+
+        CLRR R0                 ; Clear the sign flag
+        RSWD R0
+        BPL BPL_DEST            ; Should branch
+        HLT
+BPL_DEST:
+        CLRR R0
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BEQ BEQ_DEST            ; Non-branching condition
+
+        MVII #$0040, R0         ; Set the zero flag
+        RSWD R0
+        BEQ BEQ_DEST            ; Should branch
+        HLT
+BEQ_DEST:
+        CLRR R0                 ; Clear overflow and sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BLT BLT_DEST            ; Non-branching condition
+
+        MVII #$00A0, R0         ; Set overflow and sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BLT BLT_DEST            ; Non-branching condition
+
+        MVII #$0020, R0         ; Set overflow flag, but not sign flag
+        RSWD R0
+        BLT BLT_DEST            ; Should branch
+        HLT
+BLT_DEST:
+        MVII #$0080, R0         ; Set sign flag, but not overflow flag
+        RSWD R0
+        BLT BLT_DEST_2          ; Should branch
+        HLT
+BLT_DEST_2:
+        CLRR R0
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BLE BLE_DEST            ; Non-branching condition
+
+        MVII #$00A0, R0         ; Set overflow and sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BLE BLE_DEST            ; Non-branching condition
+
+        MVII #$0040, R0         ; Set just the zero flag
+        RSWD R0
+        BLE BLE_DEST            ; Should branch
+        HLT
+BLE_DEST:
+        MVII #$0020, R0         ; Set just the overflow flag
+        RSWD R0
+        BLE BLE_DEST_2          ; Should branch
+        HLT
+BLE_DEST_2:
+        MVII #$0080, R0         ; Set just the sign flag
+        RSWD R0
+        BLE BLE_DEST_3          ; Should branch
+        HLT
+BLE_DEST_3:
+        CLRR R0                 ; Unset carry flag and sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BUSC BUSC_DEST          ; Non-branching condition
+
+        MVII #$0090, R0         ; Set carry flag and sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BUSC BUSC_DEST          ; Non-branching condition
+
+        MVII #$0010, R0         ; Set just the carry flag
+        RSWD R0
+        BUSC BUSC_DEST          ; Should branch
+        HLT
+BUSC_DEST:
+        MVII #$0080, R0         ; Set just the sign flag
+        RSWD R0
+        BUSC BUSC_DEST_2        ; Should branch
+        HLT
+BUSC_DEST_2:
+        MVII #$0000, R0
+        RSWD R0
+        ;NOPP                    ; Non-branching condition
+
+        MVII #$0010, R0
+        RSWD R0
+        ;NOPP                    ; Non-branching condition
+
+        MVII #$0020, R0
+        RSWD R0
+        ;NOPP                    ; Non-branching condition
+
+        MVII #$0040, R0
+        RSWD R0
+        ;NOPP                    ; Non-branching condition
+
+        MVII #$0080, R0
+        RSWD R0
+        ;NOPP                    ; Non-branching condition
+
+NOPP_DEST:
+        MVII #$0010, R0         ; Set the carry flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BNC BNC_DEST              ; Non-branching condition
+
+        CLRR R0
+        RSWD R0
+        BNC BNC_DEST            ; Should branch
+        HLT
+BNC_DEST:
+        MVII #$0020, R0         ; Set the overflow flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BNOV BNOV_DEST            ; Non-branching condition
+
+        CLRR R0
+        RSWD R0
+        BNOV BNOV_DEST          ; Should branch
+        HLT
+BNOV_DEST:
+        CLRR R0
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BMI BMI_DEST            ; Non-branching condition
+
+        MVII #$0080, R0         ; Set the sign flag
+        RSWD R0
+        BMI BMI_DEST            ; Should branch
+        HLT
+BMI_DEST:
+        MVII #$0040, R0         ; Set the zero flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+        ; BNEQ BNEQ_DEST            ; Non-branching condition
+
+        CLRR R0
+        RSWD R0
+        BNEQ BNEQ_DEST            ; Should branch
+        HLT
+BNEQ_DEST:
+        MVII #$0020, R0         ; Set overflow flag, but not sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BGE BGE_DEST            ; Non-branching condition
+
+        MVII #$0080, R0         ; Set sign flag, but not overflow flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BGE BGE_DEST            ; Non-branching condition
+
+        CLRR R0                 ; Clear overflow and sign flag
+        RSWD R0
+        BGE BGE_DEST            ; Should branch
+        HLT
+BGE_DEST:
+        MVII #$00A0, R0         ; Set overflow and sign flag
+        RSWD R0
+        BGE BGE_DEST_2          ; Should branch
+        HLT
+BGE_DEST_2:
+        MVII #$0040, R0         ; Set just the zero flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BGT BGT_DEST            ; Non-branching condition
+
+        MVII #$0020, R0         ; Set just the overflow flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BGT BGT_DEST            ; Non-branching condition
+
+        MVII #$0080, R0         ; Set just the sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter,
+        ; at least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BGT BGT_DEST            ; Non-branching condition
+
+        CLRR R0
+        RSWD R0
+        BGT BGT_DEST            ; Should branch
+        HLT
+BGT_DEST:
+        MVII #$00A0, R0         ; Set overflow and sign flag
+        RSWD R0
+        BGT BGT_DEST_2          ; Should branch
+        HLT
+BGT_DEST_2:
+        MVII #$0010, R0         ; Set just the carry flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter, at
+        ; least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BESC BESC_DEST          ; Non-branching condition
+
+        MVII #$0080, R0         ; Set just the sign flag
+        RSWD R0
+        ; It appears that jzIntv _sometimes_ reads the branch offset parameter, at
+        ; least in its logs. I don't know if this is actually happening under
+        ; the hood, so for now I'm only performing branches where the condition
+        ; is true.
+
+        ; BESC BESC_DEST          ; Non-branching condition
+
+        CLRR R0                 ; Clear carry and sign
+        RSWD R0
+        BESC BESC_DEST          ; Should branch
+        HLT
+BESC_DEST:        
+        MVII #$0090, R0         ; Set sign and carry
+        RSWD R0
+        BESC BESC_DEST_2        ; Should branch
+        HLT
+BESC_DEST_2:
+        ;
+        ; TODO: BEXT support:
+        ;
+        ; CLRR R0
+        ; RSWD R0
+        ; BEXT BEXT_DEST
+        ; HLT
+BEXT_DEST:
+
+        ;
         ; MVO
         ;
 
@@ -745,7 +1077,7 @@ MVI_END:
         ; MVI@
         ;
 
-        CLRR R0     ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         
         JSR R4, CLEAR_MEM
@@ -797,7 +1129,7 @@ MVI_AT_END:
         ; Test sign & overflow flag
 
         MVII #$7FFF, R1
-        CLRR R0     ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         INCR R0
         MVO R0, $0200
@@ -805,7 +1137,7 @@ MVI_AT_END:
 
         ; Test carry flag
         MVII #$FFFF, R1
-        CLRR R0     ; Clear flags
+        CLRR R0                 ; Clear flags
         RSWD R0
         INCR R0
         MVO R0, $0200
