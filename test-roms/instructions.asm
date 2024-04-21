@@ -988,6 +988,127 @@ MVI_AT_END:
         RSWD R2
         SUBI #$0002, R1
 
+        ;
+        ; CMP	
+        ;
+
+        CLRR R0                 ; Test zero subtraction
+        MVO R0, $0200
+        CLRR R1
+        RSWD R1                 ; Clear flags
+        CMP $0200, R1
+
+        MVII #$0002, R0         ; Test basic subtraction, positive result
+        MVO R0, $0200
+        MVII #$0044, R1
+        CLRR R2
+        RSWD R2
+        CMP $0200, R1
+        
+        MVII #$0044, R0         ; Test basic subtraction, negative result
+        MVO R0, $0200
+        MVII #$0002, R1
+        CLRR R2
+        RSWD R2                 ; Clear flags
+        CMP $0200, R1
+
+        ; Test overflow flag, carry flag
+
+        MVII #$0002, R0         
+        MVO R0, $0200
+        MVII #$8001, R1
+        CLRR R0
+        RSWD R0
+        CMP $0200, R1
+
+        ;
+        ; CMP@
+        ;
+
+        CLRR R1                 ; Test zero subtraction
+        MVO R1, $0200
+        MVII #$0200, R1
+        CLRR R0
+        RSWD R0                 ; Clear flags
+        CMP@ R1, R0
+
+        MVII #$0002, R1         ; Test basic subtraction, positive result
+        MVO R1, $0200
+        MVII #$0200, R1
+        MVII #$0044, R0
+        CLRR R2
+        RSWD R2
+        CMP@ R1, R0
+
+        MVII #$0044, R1         ; Test basic subtraction, negative result
+        MVO R1, $0200
+        MVII #$0200, R1
+        MVII #$0002, R0
+        CLRR R2
+        RSWD R2
+        CMP@ R1, R0
+
+        ; Test overflow flag, carry flag
+
+        MVII #$0002, R1         
+        MVO R1, $0200
+        MVII #$8001, R0
+        MVII #$0200, R1
+        CLRR R2
+        RSWD R2
+        CMP@ R1, R0
+
+        ;
+        ; CMPI
+        ;
+        ; Test zero subtraction
+        
+        CLRR R1
+        CLRR R2
+        RSWD R2                 ; Clear flags
+        CMPI #$0000, R1
+
+        MVII #$0044, R1         ; Test basic subtraction, positive result
+        CLRR R2
+        RSWD R2
+        CMPI #$0002, R1
+
+        MVII #$0002, R1         ; Test basic subtraction, negative result
+        CLRR R2
+        RSWD R2
+        CMPI #$0044, R1
+
+        ; Test overflow flag, carry flag
+
+        MVII #$8001, R1
+        CLRR R2
+        RSWD R2
+        CMPI #$0002, R1
+
+        ;
+        ; AND	
+        ;
+
+        ;
+        ; AND@
+        ;
+
+        ;
+        ; ANDI
+        ;
+
+        ;
+        ; XOR	
+        ;
+
+        ;
+        ; XOR@
+        ;
+
+        ;
+        ; XORI
+        ;
+
 MAIN_END:
 
         HLT

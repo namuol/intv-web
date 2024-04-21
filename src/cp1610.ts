@@ -500,23 +500,24 @@ export class CP1610 implements BusDevice {
                   this.c = result > 0xffff;
                   break;
                 }
+                case CMP:
                 case SUB: {
                   const i = this.#f2;
                   const r1 = this.#dtbData;
                   const r2 = this.r[i];
                   const result = r2 - r1;
-                  this.r[i] = result;
-                  this.s = (this.r[i] & 0b1000_0000_0000_0000) !== 0;
-                  this.z = this.r[i] === 0;
+                  this.s = (result & 0b1000_0000_0000_0000) !== 0;
+                  this.z = result === 0;
                   this.o =
                     (0x8000 & r1) !== (0x8000 & r2) &&
                     this.s === Boolean(0x8000 & r1);
                   this.c = r2 >= r1;
+                  if (this.#operation === SUB) {
+                    this.r[i] = result;
+                  }
                   break;
                 }
-                case CMP: {
-                  break;
-                }
+
                 case AND: {
                   const i = this.#f2;
                   this.r[i] &= this.#dtbData;
