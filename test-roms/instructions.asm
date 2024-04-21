@@ -960,6 +960,34 @@ MVI_AT_END:
         RSWD R2
         SUB@ R1, R0
 
+        ;
+        ; SUBI
+        ;
+
+        ; Test zero subtraction
+        
+        CLRR R1
+        CLRR R2
+        RSWD R2                 ; Clear flags
+        SUBI #$0000, R1
+
+        MVII #$0044, R1         ; Test basic subtraction, positive result
+        CLRR R2
+        RSWD R2
+        SUBI #$0002, R1
+
+        MVII #$0002, R1         ; Test basic subtraction, negative result
+        CLRR R2
+        RSWD R2
+        SUBI #$0044, R1
+
+        ; Test overflow flag, carry flag
+
+        MVII #$8001, R1
+        CLRR R2
+        RSWD R2
+        SUBI #$0002, R1
+
 MAIN_END:
 
         HLT
