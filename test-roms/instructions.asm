@@ -643,42 +643,35 @@ MOVR_JUMP:
         ; ANDR
         ;
         
-        CLRR R0                 ; Clear flags
-        RSWD R0
-
         MVII #$FFFF, R0
         CLRR R1
+        RSWD R1
         ANDR R0, R1             ; Test zero flag
 
-        CLRR R0                 ; Clear flags
-        RSWD R0
-        
         MVII #$8000, R0
         MVII #$FFFF, R1
+        CLRR R2
+        RSWD R2
         ANDR R0, R1             ; Test sign flag
 
         ;
         ; XORR
         ;
-        
-        CLRR R0                 ; Clear flags
-        RSWD R0
 
         MVII #$FFFF, R0
         MVII #$FFFF, R1
+        CLRR R2
+        RSWD R2
         XORR R0, R1             ; Test zero flag
-
-        CLRR R0                 ; Clear flags
-        RSWD R0
 
         MVII #$8000, R0
         CLRR R1
+        RSWD R1
         XORR R0, R1             ; Test sign flag
 
-        CLRR R0                 ; Clear flags
-        RSWD R0
-
         MVII #$ABCD, R0
+        CLRR R2
+        RSWD R2
         CLRR R0                 ; Test CLRR alias
 
         ;
@@ -1088,26 +1081,103 @@ MVI_AT_END:
         ;
         ; AND	
         ;
+        
+        MVII #$FFFF, R0
+        CLRR R1
+        RSWD R1
+        MVO R1, $0200
+        AND $0200, R0           ; Test zero flag
+
+        MVII #$8000, R0
+        MVII #$FFFF, R1
+        MVO R1, $0200
+        CLRR R2
+        RSWD R2
+        AND $0200, R0          ; Test sign flag
 
         ;
         ; AND@
         ;
 
+        MVII #$FFFF, R0
+        CLRR R1
+        RSWD R1
+        MVO R1, $0200
+        MVII #$0200, R1
+        AND@ R1, R0             ; Test zero flag
+
+        MVII #$8000, R0
+        MVII #$FFFF, R1
+        MVO R1, $0200
+        CLRR R2
+        RSWD R2
+        MVII #$0200, R1
+        AND@ R1, R0             ; Test sign flag
+
         ;
         ; ANDI
         ;
+
+        CLRR R2
+        RSWD R2
+        MVII #$FFFF, R0
+        ANDI #$0200, R0             ; Test zero flag
+
+        CLRR R2
+        RSWD R2
+        MVII #$8000, R0
+        ANDI #$FFFF, R0             ; Test sign flag
 
         ;
         ; XOR	
         ;
 
+        MVII #$FFFF, R0
+        MVII #$FFFF, R1
+        MVO R1, $0200
+        CLRR R2
+        RSWD R2
+        XOR $0200, R1           ; Test zero flag
+
+        MVII #$8000, R0
+        CLRR R1
+        MVO R1, $0200
+        RSWD R1
+        XOR $0200, R1           ; Test sign flag
+
         ;
         ; XOR@
         ;
 
+        MVII #$FFFF, R0
+        MVII #$FFFF, R1
+        MVO R1, $0200
+        MVII #$0200, R1
+        CLRR R2
+        RSWD R2
+        XOR@ R1, R0             ; Test zero flag
+
+        MVII #$8000, R0
+        CLRR R1
+        MVO R1, $0200
+        MVII #$0200, R1
+        CLRR R2
+        RSWD R2
+        XOR@ R1, R0             ; Test sign flag
+
         ;
         ; XORI
         ;
+
+        MVII #$FFFF, R0
+        CLRR R2
+        RSWD R2
+        XORI #$FFFF, R0         ; Test zero flag
+
+        MVII #$8000, R0
+        CLRR R2
+        RSWD R2
+        XORI #$0000, R0         ; Test sign flag
 
 MAIN_END:
 
