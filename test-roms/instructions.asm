@@ -788,9 +788,6 @@ MVI_AT_END:
         ;
 
         ; Basic test
-        JSR R4, CLEAR_MEM
-        JSR R4, CLEAR_R0_THRU_R6
-        CLRR R4
 
         INCR R1                 ; Set R1 to 1; MVII #$0001, R1 behaves funkily
         MVII #$0002, R0         ; We are going to add 2 to R1
@@ -825,9 +822,6 @@ MVI_AT_END:
         ; ADD@
         ;
 
-        JSR R4, CLEAR_MEM
-        JSR R4, CLEAR_R0_THRU_R6
-        CLRR R4
         CLRR R1     ; Clear flags
         RSWD R1
 
@@ -928,6 +922,43 @@ MVI_AT_END:
         CLRR R0
         RSWD R0
         SUB $0200, R1
+
+        ;
+        ; SUB@
+        ;
+
+        CLRR R1                 ; Test zero subtraction
+        MVO R1, $0200
+        MVII #$0200, R1
+        CLRR R0
+        RSWD R0                 ; Clear flags
+        SUB@ R1, R0
+
+        MVII #$0002, R1         ; Test basic subtraction, positive result
+        MVO R1, $0200
+        MVII #$0200, R1
+        MVII #$0044, R0
+        CLRR R2
+        RSWD R2
+        SUB@ R1, R0
+
+        MVII #$0044, R1         ; Test basic subtraction, negative result
+        MVO R1, $0200
+        MVII #$0200, R1
+        MVII #$0002, R0
+        CLRR R2
+        RSWD R2
+        SUB@ R1, R0
+
+        ; Test overflow flag, carry flag
+
+        MVII #$0002, R1         
+        MVO R1, $0200
+        MVII #$8001, R0
+        MVII #$0200, R1
+        CLRR R2
+        RSWD R2
+        SUB@ R1, R0
 
 MAIN_END:
 
