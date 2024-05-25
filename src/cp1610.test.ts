@@ -8,6 +8,7 @@ import {Bus, BusDevice} from "./Bus";
 import {UnreachableCaseError} from "./UnreachableCaseError";
 import {CP1610} from "./cp1610";
 import {decodeOpcode} from "./decodeOpcode";
+import {trace} from "./trace";
 
 const readRomIntoUint16Array = (path: string) => {
   const romBuffer = fs.readFileSync(path);
@@ -540,6 +541,8 @@ describe("jzIntv fixtures", async () => {
           case "MOVR": {
             if (reg1Index === 7) {
               return `JR R${reg0Index}`;
+            } else if (reg0Index === reg1Index) {
+              return `TSTR R${reg0Index}`;
             } else {
               return `${instruction.mnemonic} R${reg0Index},R${reg1Index}`;
             }
@@ -557,7 +560,7 @@ describe("jzIntv fixtures", async () => {
             const offset = peekBus(pc + 1);
             const addr =
               pc + (direction * offset + 1 + (direction > 0 ? 1 : 0));
-            console.log({pc: word(pc), addr: word(addr), direction, offset});
+            trace({pc: word(pc), addr: word(addr), direction, offset});
 
             // prettier-ignore
             const mnemonic = (() => {
